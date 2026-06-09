@@ -1,9 +1,8 @@
 import { db } from '@/lib/db';
 import { scanRuns, portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
-import { desc, eq, sql as drizzleSql, count } from 'drizzle-orm';
+import { desc, eq, count, inArray } from 'drizzle-orm';
 import { headers } from 'next/headers';
-import { sql } from 'drizzle-orm';
 
 function ipCountFromCidr(cidr: string): number {
   try {
@@ -12,7 +11,6 @@ function ipCountFromCidr(cidr: string): number {
     if (isNaN(p) || p < 0 || p > 32) return 0;
     const parts = ipPart.split('.').map((n) => parseInt(n, 10));
     if (parts.length !== 4 || parts.some((n) => isNaN(n))) return 0;
-    // Approximate host count
     if (p >= 31) return 1;
     return Math.max(1, Math.pow(2, 32 - p) - 2);
   } catch {
@@ -34,16 +32,17 @@ export async function GET() {
 
   const runIds = runs.map((r) => r.id);
 
-  const findingsCounts = await db.execute(sql`
-    SELECT run_id, COUNT(*)::int as cnt
-    FROM port_findings
-    WHERE run_id = ANY(${runIds})
-    GROUP BY run_id
-  `);
+  const findingsCounts = await db
+    .select({ runId: portFindings.runId, cnt: count() })
+    .from(portFindings)
+    .where(inArray(portFindings.runId, runIds))
+    .groupBy(portFindings.runId);
 
   const countMap: Record<number, number> = {};
-  for (const row of findingsCounts.rows as any[]) {
-    countMap[Number(row.run_id)] = Number(row.cnt);
+  for (const row of findingsCounts) {
+    if (row.runId != null) {
+      countMap[row.runId] = Number(row.cnt);
+    }
   }
 
   const now = Date.now();
@@ -59,13 +58,9 @@ export async function GET() {
       status = run.notes?.includes('Force killed') ? 'killed' : 'completed';
     }
 
-    // Rough progress estimate: we don't know total scanned attempts, but we
-    // can give a lower-bound based on findings vs CIDR size.
     const totalHosts = ipCountFromCidr(run.cidr);
     const portsCount = run.ports.split(',').length;
     const totalTargets = totalHosts * portsCount;
-    // Heuristic: if we have findings, we're making progress. This is very
-    // approximate since most targets will be closed/filtered.
     const progressPct = totalTargets > 0 && !run.finishedAt
       ? Math.min(99, Math.round((elapsedSec / Math.max(elapsedSec, totalTargets / 250)) * 100))
       : run.finishedAt ? 100 : 0;

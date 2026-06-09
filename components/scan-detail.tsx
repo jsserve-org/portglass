@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
 import {
   ArrowLeft,
   Globe,
@@ -61,7 +63,7 @@ function isHttpPort(port: number) {
   return HTTP_PORTS.has(port);
 }
 
-export default function ScanDetail({ runId }: { runId: string }) {
+function ScanDetailInner({ runId }: { runId: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
 
   const scan = useQuery({
@@ -261,5 +263,13 @@ export default function ScanDetail({ runId }: { runId: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ScanDetail({ runId }: { runId: string }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ScanDetailInner runId={runId} />
+    </QueryClientProvider>
   );
 }

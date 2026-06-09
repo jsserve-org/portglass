@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Globe,
@@ -13,6 +13,8 @@ import {
   Shield,
   Clock,
 } from "lucide-react";
+
+const queryClient = new QueryClient();
 import Link from "next/link";
 import { useState } from "react";
 
@@ -42,7 +44,7 @@ function isHttpPort(port: number) {
   return HTTP_PORTS.has(port);
 }
 
-export default function HostDetail({ ip }: { ip: string }) {
+function HostDetailInner({ ip }: { ip: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
 
   const data = useQuery({
@@ -167,5 +169,13 @@ export default function HostDetail({ ip }: { ip: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function HostDetail({ ip }: { ip: string }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <HostDetailInner ip={ip} />
+    </QueryClientProvider>
   );
 }

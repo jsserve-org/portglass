@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -40,3 +40,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh api --method PATCH /orgs/jsserve-org/packages/container/portglass/visibility -f visibility=public || true
+      - name: Export Docker image tarball for no-build server deploy
+        run: |
+          docker buildx build --platform linux/amd64 --tag portglass:latest --output type=docker,dest=/tmp/portglass-image.tar .
+          gzip -9 /tmp/portglass-image.tar
+      - name: Publish latest image tarball release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create latest /tmp/portglass-image.tar.gz --title latest --notes "Latest Portglass Docker image tarball" --latest || true
+          gh release upload latest /tmp/portglass-image.tar.gz --clobber

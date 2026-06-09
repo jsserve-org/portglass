@@ -79,6 +79,7 @@ function HostsListInner() {
             <ArrowLeft size={14} /> Dashboard
           </Link>
           <Link href="/hosts" className="nav-link active">Hosts</Link>
+          <Link href="/scans" className="nav-link">Scans</Link>
         </div>
       </nav>
 

@@ -82,6 +82,7 @@ function HostDetailInner({ ip }: { ip: string }) {
             <ArrowLeft size={14} /> Dashboard
           </Link>
           <Link href="/hosts" className="nav-link">Hosts</Link>
+          <Link href="/scans" className="nav-link">Scans</Link>
         </div>
       </nav>
 

@@ -147,6 +147,7 @@ function DashboardInner() {
           </a>
           <a href="/" className="nav-link active">Search</a>
           <a href="/hosts" className="nav-link">Hosts</a>
+          <a href="/scans" className="nav-link">Scans</a>
         </div>
         <div className="nav-right">
           <button className="scan-btn" onClick={() => setShowScan(true)}>

@@ -94,6 +94,17 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const stats = scan.data?.stats;
   const isActive = run && !run.finishedAt;
 
+  const elapsedSec = run
+    ? Math.round((Date.now() - new Date(run.startedAt).getTime()) / 1000)
+    : 0;
+  const fmtElapsed = (sec: number) => {
+    if (sec < 60) return `${sec}s`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+
   if (scan.isLoading) {
     return (
       <div className="app">
@@ -148,6 +159,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
             <ArrowLeft size={14} /> Dashboard
           </Link>
           <Link href="/hosts" className="nav-link">Hosts</Link>
+          <Link href="/scans" className="nav-link">Scans</Link>
         </div>
       </nav>
 
@@ -179,6 +191,25 @@ function ScanDetailInner({ runId }: { runId: string }) {
           </div>
           {killError && <div className="modal-error scan-kill-error">{killError}</div>}
         </div>
+
+        {isActive && (
+          <div className="scan-progress-box">
+            <div className="scan-progress-header">
+              <span className="scan-progress-title">
+                <Activity size={14} className="spin" /> Scanning in progress…
+              </span>
+              <span className="scan-progress-pct">Live</span>
+            </div>
+            <div className="progress-track">
+              <div className="progress-fill progress-pulse" style={{ width: "100%" }} />
+            </div>
+            <div className="scan-progress-stats">
+              <span><Clock size={12} /> Elapsed {fmtElapsed(elapsedSec)}</span>
+              <span><Radio size={12} /> {findings.length} open finding{findings.length === 1 ? "" : "s"} so far</span>
+              <span><Globe size={12} /> {stats?.hosts ?? 0} host{stats?.hosts === 1 ? "" : "s"} discovered</span>
+            </div>
+          </div>
+        )}
 
         {comp && (
           <div className="scan-summary-cards">

@@ -16,6 +16,7 @@ const db = drizzle(pool);
 const app = express();
 const publicPort = Number(process.env.PUBLIC_PORT ?? process.env.PORT ?? 51111);
 const baseURL = process.env.BASE_URL ?? `http://localhost:${publicPort}`;
+let authGuard: express.RequestHandler = (_req, _res, next) => next();
 
 if (process.env.AUTHENTIK_ISSUER_BASE_URL && process.env.AUTHENTIK_CLIENT_ID && process.env.AUTHENTIK_CLIENT_SECRET && process.env.SESSION_SECRET) {
   app.use(auth({
@@ -28,7 +29,8 @@ if (process.env.AUTHENTIK_ISSUER_BASE_URL && process.env.AUTHENTIK_CLIENT_ID && 
     secret: process.env.SESSION_SECRET,
     routes: { callback: '/callback', login: '/login', logout: '/logout' },
   }));
-  app.use('/api', requiresAuth());
+  authGuard = requiresAuth();
+  app.use('/api', authGuard);
   console.log(`Authentik OIDC enabled for ${baseURL}`);
 } else {
   console.warn('Authentik OIDC disabled: set AUTHENTIK_ISSUER_BASE_URL, AUTHENTIK_CLIENT_ID, AUTHENTIK_CLIENT_SECRET, SESSION_SECRET');
@@ -105,7 +107,7 @@ app.get('/api/runs', async (_req, res) => {
 
 const distDir = path.resolve(process.cwd(), 'dist');
 app.use(express.static(distDir));
-app.get('*', requiresAuth(), (_req, res) => {
+app.get('*', authGuard, (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 

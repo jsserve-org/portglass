@@ -107,7 +107,7 @@ app.get('/api/runs', async (_req, res) => {
 
 const distDir = path.resolve(process.cwd(), 'dist');
 app.use(express.static(distDir));
-app.get('*', authGuard, (_req, res) => {
+app.get(/.*/, authGuard, (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 

@@ -7,7 +7,7 @@ type MeResponse = { user: { id: string; name?: string; email?: string; image?: s
 
 export default function AuthNav() {
   const [mounted, setMounted] = useState(false);
-  const [user, setUser] = useState<MeResponse["user"]>(undefined);
+  const [user, setUser] = useState<MeResponse["user"] | undefined>(undefined);
 
   useEffect(() => {
     setMounted(true);

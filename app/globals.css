@@ -1201,6 +1201,58 @@ html, body {
   font-size: 20px;
 }
 
+/* Hosts list expanded row */
+.expanded-row td {
+  padding: 0;
+  background: var(--bg-elevated);
+}
+
+.host-ports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.host-port-chip {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.host-port-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.host-port-banner {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-port-headers {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  background: var(--bg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .results { grid-template-columns: 1fr; }
@@ -1214,4 +1266,5 @@ html, body {
   .scan-detail-page { padding: 20px 16px; }
   .scan-summary-cards { grid-template-columns: 1fr; }
   .findings-table .cell-ellipsis { max-width: 120px; }
+  .host-ports-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }

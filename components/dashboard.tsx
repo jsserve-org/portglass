@@ -121,6 +121,7 @@ function DashboardInner() {
             <span>portglass</span>
           </a>
           <a href="/" className="nav-link active">Search</a>
+          <a href="/hosts" className="nav-link">Hosts</a>
         </div>
         <div className="nav-right">
           <button className="scan-btn" onClick={() => setShowScan(true)}>

@@ -79,6 +79,7 @@ export default function HostDetail({ ip }: { ip: string }) {
           <Link href="/" className="nav-link">
             <ArrowLeft size={14} /> Dashboard
           </Link>
+          <Link href="/hosts" className="nav-link">Hosts</Link>
         </div>
       </nav>
 

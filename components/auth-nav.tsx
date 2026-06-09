@@ -1,43 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LogOut, Shield, User } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 
-type MeResponse = { user: { id: string; name?: string; email?: string; image?: string } | null };
+type UserInfo = { id: string; name?: string; email?: string; image?: string };
 
 export default function AuthNav() {
   const [mounted, setMounted] = useState(false);
-  const [user, setUser] = useState<MeResponse["user"] | undefined>(undefined);
+  const [user, setUser] = useState<UserInfo | null>(null);
 
   useEffect(() => {
     setMounted(true);
-    fetch("/api/me")
+    fetch("/api/me", { credentials: "include" })
       .then((r) => r.json())
-      .then((d: MeResponse) => setUser(d.user))
+      .then((d) => setUser(d.user))
       .catch(() => setUser(null));
   }, []);
 
-  const handleSignIn = () => {
-    const callback = window.location.href;
-    window.location.href = `/api/auth/oauth2/authorize?providerId=authentik&callbackURL=${encodeURIComponent(callback)}`;
-  };
-
-  const handleSignOut = () => {
-    fetch("/api/auth/sign-out", { method: "POST", credentials: "include" }).finally(() => {
-      window.location.reload();
+  const handleSignOut = async () => {
+    await fetch("/api/auth/sign-out", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
     });
+    window.location.href = "/login";
   };
 
-  if (!mounted || user === undefined) return null;
-
-  if (!user) {
-    return (
-      <button className="auth-btn" onClick={handleSignIn}>
-        <Shield size={14} />
-        Sign In
-      </button>
-    );
-  }
+  if (!mounted) return null;
+  if (!user) return null;
 
   return (
     <div className="auth-user">

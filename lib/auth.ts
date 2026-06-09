@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { genericOAuth } from 'better-auth/plugins';
 import { nextCookies } from 'better-auth/next-js';
 import { db } from './db';
+import { user, session, account, verification } from './schema';
 
 const authentikConfigured =
   !!process.env.AUTHENTIK_ISSUER_BASE_URL &&
@@ -27,7 +28,10 @@ if (authentikConfigured) {
 }
 
 export const auth = betterAuth({
-  database: drizzleAdapter(db, { provider: 'pg' }),
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: { user, session, account, verification },
+  }),
   baseURL: process.env.BASE_URL || `http://localhost:${process.env.PORT || 51111}`,
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   trustedOrigins: [process.env.BASE_URL || `http://localhost:${process.env.PORT || 51111}`],
@@ -35,3 +39,11 @@ export const auth = betterAuth({
 });
 
 export const authEnabled = authentikConfigured;
+
+export async function getSessionFromRequest(request: Request) {
+  try {
+    return await auth.api.getSession({ headers: request.headers });
+  } catch {
+    return null;
+  }
+}

@@ -49,7 +49,7 @@ type ScanRun = {
 };
 
 const api = async <T,>(path: string): Promise<T> => {
-  const res = await fetch(path);
+  const res = await fetch(path, { credentials: 'include' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 };

@@ -1,13 +1,13 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import Dashboard from '@/components/dashboard';
+import LoginClient from '@/components/login-client';
 
-export default async function Home() {
+export default async function Login() {
   const h = await headers();
   const cookie = h.get('cookie') || '';
   const hasSession = cookie.includes('better-auth.session-token');
-  if (!hasSession) {
-    redirect('/login');
+  if (hasSession) {
+    redirect('/');
   }
-  return <Dashboard />;
+  return <LoginClient />;
 }

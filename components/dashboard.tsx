@@ -1,29 +1,23 @@
+"use client";
+
 import React from 'react';
-import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import {
   Activity,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   Globe,
-  LogOut,
   MapPin,
   Monitor,
   Radio,
   Search,
   Server,
   Shield,
-  Terminal,
-  User,
   Wifi,
   Zap,
 } from 'lucide-react';
-import { createAuthClient } from 'better-auth/client';
-import './style.css';
-
-/* ─── Auth Client ─── */
-const authClient = createAuthClient({ baseURL: '' });
+import HostCard from './host-card';
+import AuthNav from './auth-nav';
 
 type Finding = {
   id: number;
@@ -60,21 +54,6 @@ const api = async <T,>(path: string): Promise<T> => {
   return res.json();
 };
 
-/* ─── Components ─── */
-function Badge({ children, variant = 'green' }: { children: React.ReactNode; variant?: 'green' | 'amber' | 'cyan' | 'slate' }) {
-  const map = { green: 'badge-green', amber: 'badge-amber', cyan: 'badge-cyan', slate: 'badge-slate' };
-  return <span className={`badge ${map[variant]}`}>{children}</span>;
-}
-
-function StatusPill() {
-  return (
-    <span className="status-pill">
-      <span className="dot" />
-      ONLINE
-    </span>
-  );
-}
-
 function StatChip({ label, value, icon }: { label: string; value?: number; icon: React.ReactNode }) {
   return (
     <div className="stat-chip">
@@ -87,105 +66,16 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
   );
 }
 
-function HostCard({ f, idx }: { f: Finding; idx: number }) {
+function StatusPill() {
   return (
-    <article className="host-card">
-      <div className="card-header">
-        <div className="card-left">
-          <span className="idx">#{String(idx + 1).padStart(3, '0')}</span>
-          <div className="host-info">
-            <a className="ip-link" href={`/api/findings?q=${f.ip}`} onClick={(e) => e.preventDefault()}>
-              {f.ip}
-              <ExternalLink size={12} />
-            </a>
-            <div className="host-meta">
-              <Badge variant="green">OPEN</Badge>
-              <Badge variant="cyan">PORT {f.port}</Badge>
-              {f.service && <Badge variant="amber">{f.service.toUpperCase()}</Badge>}
-              {f.product && <Badge variant="slate">{f.product}</Badge>}
-            </div>
-          </div>
-        </div>
-        <div className="card-right">
-          <span className="latency">
-            <Wifi size={13} />
-            {f.latencyMs != null ? `${f.latencyMs.toFixed(1)} ms` : '—'}
-          </span>
-          <span className="date">
-            {new Date(f.observedAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </span>
-        </div>
-      </div>
-
-      {f.banner && (
-        <div className="banner-block">
-          <div className="banner-header">
-            <Terminal size={13} />
-            <span>BANNER</span>
-          </div>
-          <pre className="banner-body">{f.banner.slice(0, 280)}{f.banner.length > 280 ? '…' : ''}</pre>
-        </div>
-      )}
-    </article>
+    <span className="status-pill">
+      <span className="dot" />
+      ONLINE
+    </span>
   );
 }
 
-/* ─── Auth Nav ─── */
-function AuthNav() {
-  const { data: me } = useQuery({
-    queryKey: ['me'],
-    queryFn: () => api<{ user: { name?: string; email?: string; image?: string } | null }>('/api/me'),
-    refetchInterval: 30000,
-  });
-
-  const { data: session, isPending } = authClient.useSession();
-  const user = session?.user ?? me?.data?.user ?? null;
-  const authConfigured = me !== undefined;
-
-  if (!authConfigured || (!user && !isPending)) {
-    if (!authConfigured) return null;
-    return (
-      <button
-        className="auth-btn"
-        onClick={() => authClient.signIn.oauth2({ providerId: 'authentik', callbackURL: window.location.href })}
-      >
-        <Shield size={14} />
-        Sign In
-      </button>
-    );
-  }
-
-  if (isPending) {
-    return <span className="auth-loading">Loading…</span>;
-  }
-
-  return (
-    <div className="auth-user">
-      {user?.image ? (
-        <img src={user.image} alt="" className="auth-avatar" />
-      ) : (
-        <div className="auth-avatar-fallback">
-          <User size={14} />
-        </div>
-      )}
-      <span className="auth-name">{user?.name || user?.email || 'User'}</span>
-      <button
-        className="auth-logout"
-        onClick={() => authClient.signOut()}
-        title="Sign out"
-      >
-        <LogOut size={14} />
-      </button>
-    </div>
-  );
-}
-
-/* ─── App ─── */
-function App() {
+function DashboardInner() {
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
   const [page, setPage] = React.useState(1);
@@ -220,15 +110,13 @@ function App() {
 
   return (
     <div className="app">
-      {/* Top Navigation */}
       <nav className="topnav">
         <div className="nav-left">
-          <div className="logo">
+          <a href="/" className="logo">
             <Shield size={22} />
             <span>portglass</span>
-          </div>
+          </a>
           <a href="/" className="nav-link active">Search</a>
-          <a href="/api/runs" className="nav-link">Runs</a>
         </div>
         <div className="nav-right">
           <StatusPill />
@@ -236,7 +124,6 @@ function App() {
         </div>
       </nav>
 
-      {/* Hero Search */}
       <header className="search-hero">
         <div className="search-inner">
           <h1>Explore the Network</h1>
@@ -248,10 +135,7 @@ function App() {
             <Search size={18} className="search-icon" />
             <input
               value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }}
               placeholder="Search by IP, banner, service or product..."
             />
             <button className="search-btn">Search</button>
@@ -262,10 +146,7 @@ function App() {
               <button
                 key={p.port}
                 className={port === String(p.port) ? 'tag-active' : ''}
-                onClick={() => {
-                  setPort(port === String(p.port) ? '' : String(p.port));
-                  setPage(1);
-                }}
+                onClick={() => { setPort(port === String(p.port) ? '' : String(p.port)); setPage(1); }}
               >
                 Port {p.port}
               </button>
@@ -274,7 +155,6 @@ function App() {
         </div>
       </header>
 
-      {/* Stats strip */}
       <div className="stats-bar">
         <StatChip label="Findings" value={stats.data?.findings} icon={<Radio size={16} />} />
         <StatChip label="Hosts" value={stats.data?.hosts} icon={<Globe size={16} />} />
@@ -282,9 +162,7 @@ function App() {
         <StatChip label="Runs" value={stats.data?.runs} icon={<Zap size={16} />} />
       </div>
 
-      {/* Main Content */}
       <main className="results">
-        {/* Sidebar Filters */}
         <aside className="filters">
           <div className="filter-panel">
             <h4>Port Filter</h4>
@@ -293,10 +171,7 @@ function App() {
                 <button
                   key={p.port}
                   className={`port-chip ${port === String(p.port) ? 'active' : ''}`}
-                  onClick={() => {
-                    setPort(port === String(p.port) ? '' : String(p.port));
-                    setPage(1);
-                  }}
+                  onClick={() => { setPort(port === String(p.port) ? '' : String(p.port)); setPage(1); }}
                 >
                   <span className="port-num">{p.port}</span>
                   <span className="port-cnt">{p.count}</span>
@@ -304,9 +179,7 @@ function App() {
               ))}
             </div>
             {port && (
-              <button className="clear-filter" onClick={() => setPort('')}>
-                Clear port filter
-              </button>
+              <button className="clear-filter" onClick={() => setPort('')}>Clear port filter</button>
             )}
           </div>
 
@@ -331,7 +204,6 @@ function App() {
           </div>
         </aside>
 
-        {/* Results List */}
         <section className="results-main">
           <div className="results-header">
             <span className="results-count">
@@ -374,8 +246,11 @@ function App() {
 }
 
 const queryClient = new QueryClient();
-createRoot(document.getElementById('root')!).render(
-  <QueryClientProvider client={queryClient}>
-    <App />
-  </QueryClientProvider>
-);
+
+export default function Dashboard() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DashboardInner />
+    </QueryClientProvider>
+  );
+}

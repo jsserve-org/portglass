@@ -1,46 +1,30 @@
 {
-  "name": "fast_port_scanner",
+  "name": "portglass",
   "version": "1.0.0",
-  "description": "A fast Python TCP connect scanner for **networks you own or administer**. It uses multiple OS threads plus asyncio concurrency to cover large IPv4 ranges quickly, while letting you slow scans down for accuracy and lower network impact.",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "test": "vitest run",
-    "dev": "concurrently \"npm run api\" \"npm run ui\"",
-    "ui": "vite --host 0.0.0.0",
-    "api": "tsx web/server/index.ts",
-    "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "node dist-server/index.js"
+    "dev": "next dev -p 51111",
+    "build": "next build",
+    "start": "next start -p 51111",
+    "lint": "next lint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@tanstack/react-query": "latest",
-    "@tanstack/react-table": "latest",
-    "@vitejs/plugin-react": "latest",
-    "cors": "latest",
+    "better-auth": "latest",
     "dotenv": "latest",
     "drizzle-orm": "latest",
-    "express": "latest",
-    "express-openid-connect": "latest",
     "lucide-react": "latest",
+    "next": "latest",
     "pg": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest",
     "zod": "latest"
   },
   "devDependencies": {
-    "@types/cors": "latest",
-    "@types/express": "latest",
     "@types/node": "latest",
     "@types/pg": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "concurrently": "latest",
-    "tsx": "latest",
-    "typescript": "latest",
-    "vitest": "latest"
+    "typescript": "latest"
   }
 }

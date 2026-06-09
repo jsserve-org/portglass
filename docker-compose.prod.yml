@@ -22,7 +22,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "51111:51111"
+      - "127.0.0.1:51111:51111"
     environment:
       PORT: 51111
       PUBLIC_PORT: 51111

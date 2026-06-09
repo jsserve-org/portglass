@@ -1,16 +1,23 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+const SESSION_COOKIE_NAMES = [
+  '__Secure-better-auth.session_token',
+  '__Host-better-auth.session_token',
+  'better-auth.session_token',
+  'better-auth-session_token',
+];
+
 function hasSessionCookie(req: NextRequest): boolean {
-  return req.cookies.getAll().some((c) => c.name === 'better-auth.session_token' || c.name === 'better-auth-session_token');
+  return SESSION_COOKIE_NAMES.some((name) => !!req.cookies.get(name)?.value);
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hasSession = hasSessionCookie(request);
 
   // Public paths
   if (
-    pathname === '/login' ||
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/_next/') ||
     pathname === '/api/me' ||
@@ -20,7 +27,16 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!hasSessionCookie(request)) {
+  // Logged-in users shouldn't see login page
+  if (pathname === '/login') {
+    if (hasSession) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Everything else requires auth
+  if (!hasSession) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

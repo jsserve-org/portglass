@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.git
+.github
+.DS_Store
+*.csv
+__pycache__
+*.pyc
+dist
+.dist-server

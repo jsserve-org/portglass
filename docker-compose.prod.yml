@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scanner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: scanner
+    volumes:
+      - portglass_pg:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanner -d scanner"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  portglass:
+    image: ${PORTGLASS_IMAGE:?set PORTGLASS_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "51111:51111"
+    environment:
+      PORT: 51111
+      PUBLIC_PORT: 51111
+      DATABASE_URL: postgres://scanner:${POSTGRES_PASSWORD}@postgres:5432/scanner
+      BASE_URL: ${BASE_URL:?set BASE_URL, e.g. https://portglass.example.com}
+      AUTHENTIK_ISSUER_BASE_URL: ${AUTHENTIK_ISSUER_BASE_URL:?set authentik issuer url}
+      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?set authentik client id}
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?set authentik client secret}
+      SESSION_SECRET: ${SESSION_SECRET:?set long random session secret}
+
+volumes:
+  portglass_pg:

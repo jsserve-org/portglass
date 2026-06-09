@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""
+Fast authorized TCP port scanner.
+
+Designed for defensive inventory of networks you own/administer. It uses multiple
+OS threads, each running an asyncio event loop, to perform TCP connect checks.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import csv
+import ipaddress
+import contextlib
+import os
+import queue
+import socket
+import sys
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Iterator, Sequence
+
+TOP_100_PORTS = [
+    7, 9, 13, 21, 22, 23, 25, 26, 37, 53, 79, 80, 81, 88, 106, 110, 111, 113,
+    119, 135, 139, 143, 144, 179, 199, 389, 427, 443, 444, 445, 465, 513, 514,
+    515, 543, 544, 548, 554, 587, 631, 646, 873, 990, 993, 995, 1025, 1026,
+    1027, 1028, 1029, 1110, 1433, 1720, 1723, 1755, 1900, 2000, 2001, 2049,
+    2121, 2717, 3000, 3128, 3306, 3389, 3986, 4899, 5000, 5009, 5051, 5060,
+    5101, 5190, 5357, 5432, 5631, 5666, 5800, 5900, 6000, 6001, 6646, 7070,
+    8000, 8008, 8009, 8080, 8081, 8443, 8888, 9100, 9999, 10000, 32768, 49152,
+    49153, 49154, 49155, 49156, 49157,
+]
+
+
+@dataclass(frozen=True)
+class Finding:
+    ip: str
+    port: int
+    state: str
+    latency_ms: float
+    banner: str = ""
+
+
+class AsyncRateLimiter:
+    """Simple per-thread async rate limiter in connection attempts/second."""
+
+    def __init__(self, rate: float):
+        self.interval = 0.0 if rate <= 0 else 1.0 / rate
+        self._next_at = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        if self.interval <= 0:
+            return
+        async with self._lock:
+            now = time.monotonic()
+            if self._next_at > now:
+                await asyncio.sleep(self._next_at - now)
+                now = time.monotonic()
+            self._next_at = max(self._next_at, now) + self.interval
+
+
+def parse_ports(spec: str) -> list[int]:
+    spec = spec.strip().lower()
+    if spec in {"top100", "top-100"}:
+        return sorted(set(TOP_100_PORTS))
+    if spec in {"common", "default"}:
+        return [22, 80, 443, 445, 3389, 8080, 8443]
+
+    ports: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            left, right = part.split("-", 1)
+            start, end = int(left), int(right)
+            if start > end:
+                start, end = end, start
+            ports.update(range(start, end + 1))
+        else:
+            ports.add(int(part))
+
+    bad = [p for p in ports if p < 1 or p > 65535]
+    if bad:
+        raise argparse.ArgumentTypeError(f"invalid port(s): {bad[:5]}")
+    return sorted(ports)
+
+
+def iter_targets(cidr: str, ports: Sequence[int]) -> Iterator[tuple[str, int]]:
+    net = ipaddress.ip_network(cidr, strict=False)
+    if net.version != 4:
+        raise ValueError("only IPv4 ranges are supported")
+    for ip in net.hosts():
+        ip_s = str(ip)
+        for port in ports:
+            yield ip_s, port
+
+
+def chunked(items: Iterable[tuple[str, int]], size: int) -> Iterator[list[tuple[str, int]]]:
+    batch: list[tuple[str, int]] = []
+    for item in items:
+        batch.append(item)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+async def scan_once(
+    ip: str,
+    port: int,
+    timeout: float,
+    limiter: AsyncRateLimiter,
+    banner: bool,
+    on_attempt=None,
+) -> Finding | None:
+    await limiter.wait()
+    if on_attempt is not None:
+        on_attempt()
+    started = time.perf_counter()
+    writer = None
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        banner_text = ""
+        if banner:
+            try:
+                data = await asyncio.wait_for(reader.read(128), timeout=min(timeout, 1.0))
+                banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+            except Exception:
+                banner_text = ""
+        return Finding(ip=ip, port=port, state="open", latency_ms=latency_ms, banner=banner_text)
+    except (asyncio.TimeoutError, OSError, ConnectionError):
+        return None
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+
+async def verify_open(
+    ip: str,
+    port: int,
+    timeout: float,
+    limiter: AsyncRateLimiter,
+    retries: int,
+    banner: bool,
+    on_attempt=None,
+) -> Finding | None:
+    finding = await scan_once(ip, port, timeout, limiter, banner, on_attempt=on_attempt)
+    if finding is None:
+        return None
+    for _ in range(max(0, retries)):
+        again = await scan_once(ip, port, timeout, limiter, banner)
+        if again is None:
+            return None
+        # Keep the first/fast latency, but retain a later banner if first was empty.
+        if not finding.banner and again.banner:
+            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner)
+    return finding
+
+
+async def scan_batch(
+    batch: Sequence[tuple[str, int]],
+    *,
+    concurrency: int,
+    timeout: float,
+    per_thread_rate: float,
+    verify_retries: int,
+    banner: bool,
+    on_attempt=None,
+) -> list[Finding]:
+    limiter = AsyncRateLimiter(per_thread_rate)
+    sem = asyncio.Semaphore(concurrency)
+    results: list[Finding] = []
+
+    async def runner(ip: str, port: int) -> None:
+        async with sem:
+            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, on_attempt=on_attempt)
+            if finding is not None:
+                results.append(finding)
+
+    await asyncio.gather(*(runner(ip, port) for ip, port in batch))
+    return results
+
+
+def writerow_safe(csv_writer: csv.writer | None, csv_file, lock: threading.Lock, finding: Finding) -> None:
+    if csv_writer is None:
+        return
+    with lock:
+        csv_writer.writerow([finding.ip, finding.port, finding.state, f"{finding.latency_ms:.1f}", finding.banner])
+        if csv_file is not None:
+            csv_file.flush()
+
+
+def db_insert_findings(db_conn, db_lock: threading.Lock, run_id: int | None, findings: Sequence[Finding]) -> None:
+    if db_conn is None or not findings:
+        return
+    with db_lock:
+        with db_conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, ip, port) DO UPDATE SET
+                  state = EXCLUDED.state,
+                  latency_ms = EXCLUDED.latency_ms,
+                  banner = EXCLUDED.banner,
+                  observed_at = now()
+                """,
+                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner) for f in findings],
+            )
+        db_conn.commit()
+
+
+def worker(
+    worker_id: int,
+    batches: "queue.Queue[list[tuple[str, int]] | None]",
+    csv_writer: csv.writer | None,
+    csv_file,
+    csv_lock: threading.Lock,
+    db_conn,
+    db_lock: threading.Lock,
+    run_id: int | None,
+    args: argparse.Namespace,
+    stats: dict[str, int],
+    stats_lock: threading.Lock,
+) -> None:
+    per_thread_rate = (args.rate / args.threads) if args.rate > 0 else 0
+    while True:
+        batch = batches.get()
+        if batch is None:
+            batches.task_done()
+            return
+        try:
+            def mark_attempt() -> None:
+                with stats_lock:
+                    stats["attempted"] += 1
+
+            findings = asyncio.run(
+                scan_batch(
+                    batch,
+                    concurrency=args.concurrency,
+                    timeout=args.timeout,
+                    per_thread_rate=per_thread_rate,
+                    verify_retries=args.verify_retries,
+                    banner=args.banner,
+                    on_attempt=mark_attempt,
+                )
+            )
+            for finding in findings:
+                writerow_safe(csv_writer, csv_file, csv_lock, finding)
+            db_insert_findings(db_conn, db_lock, run_id, findings)
+            with stats_lock:
+                stats["open"] += len(findings)
+        except Exception as exc:
+            print(f"\nWorker {worker_id} error: {exc}", file=sys.stderr)
+            raise
+        finally:
+            batches.task_done()
+
+
+def progress_thread(stats: dict[str, int], stats_lock: threading.Lock, total: int, started: float, stop: threading.Event) -> None:
+    while not stop.wait(2.0):
+        with stats_lock:
+            attempted = stats["attempted"]
+            opened = stats["open"]
+        elapsed = max(0.001, time.time() - started)
+        rate = attempted / elapsed
+        pct = (attempted / total * 100.0) if total else 0.0
+        eta = (total - attempted) / rate if rate > 0 else 0.0
+        print(f"\r{attempted:,}/{total:,} {pct:5.1f}% | {rate:,.0f}/s | open {opened:,} | ETA {eta/60:.1f}m", end="", file=sys.stderr)
+    print(file=sys.stderr)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Fast multi-threaded authorized TCP connect port scanner")
+    p.add_argument("cidr", help="IPv4 CIDR to scan, e.g. 192.168.0.0/16")
+    p.add_argument("-p", "--ports", default="common", help="Ports: common, top100, 80,443, or 1-1024 (default: common)")
+    p.add_argument("-o", "--output", default="scan-results.csv", help="CSV output path")
+    p.add_argument("--threads", type=int, default=4, help="OS scanner threads (default: 4)")
+    p.add_argument("--concurrency", type=int, default=512, help="Concurrent sockets per thread (default: 512)")
+    p.add_argument("--timeout", type=float, default=0.8, help="TCP connect timeout seconds; increase for accuracy (default: 0.8)")
+    p.add_argument("--rate", type=float, default=250.0, help="Global max connection attempts/second; lower to slow down (default: 250, 0=unlimited)")
+    p.add_argument("--verify-retries", type=int, default=0, help="Re-check open ports N extra times to reduce false positives (slower)")
+    p.add_argument("--banner", action="store_true", help="Try to read a small banner after connect (slower, may block until timeout)")
+    p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres connection URL; also reads DATABASE_URL")
+    p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
+    p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
+    p.add_argument("--yes-i-own-this-network", action="store_true", help="Required acknowledgement for authorized scanning")
+    return p
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if not args.yes_i_own_this_network:
+        print("Refusing to run without authorization acknowledgement. Add --yes-i-own-this-network for networks you own/administer.", file=sys.stderr)
+        return 2
+    if args.threads < 1 or args.concurrency < 1 or args.batch_size < 1:
+        print("threads, concurrency, and batch-size must be positive", file=sys.stderr)
+        return 2
+
+    # Raise fd limit where possible because high concurrency needs many sockets.
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = min(max(soft, args.threads * args.concurrency + 256), hard)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+    except Exception:
+        pass
+
+    ports = parse_ports(args.ports)
+    net = ipaddress.ip_network(args.cidr, strict=False)
+    total = max(0, net.num_addresses - 2) * len(ports) if net.prefixlen < 31 else net.num_addresses * len(ports)
+
+    out = Path(args.output)
+    batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
+    stats = {"attempted": 0, "open": 0}
+    stats_lock = threading.Lock()
+    csv_lock = threading.Lock()
+    db_lock = threading.Lock()
+    db_conn = None
+    run_id = None
+    if args.db_url:
+        try:
+            import psycopg
+            db_conn = psycopg.connect(args.db_url)
+            with db_conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO scan_runs (cidr, ports) VALUES (%s, %s) RETURNING id",
+                    (str(net), ",".join(map(str, ports))),
+                )
+                run_id = cur.fetchone()[0]
+            db_conn.commit()
+            print(f"Writing open-port findings to Postgres run_id={run_id}", file=sys.stderr)
+        except ImportError:
+            print("Postgres output requires psycopg. Install with: python3 -m pip install 'psycopg[binary]'", file=sys.stderr)
+            return 2
+    stop_progress = threading.Event()
+    started = time.time()
+
+    file_cm = contextlib.nullcontext(None) if args.no_csv else out.open("w", newline="", encoding="utf-8")
+    with file_cm as f:
+        csv_writer = None if args.no_csv else csv.writer(f)
+        if csv_writer is not None:
+            csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner"])
+
+        progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
+        progress.start()
+
+        print(
+            f"Scanning {args.cidr} on {len(ports)} port(s): {total:,} TCP connect attempts. "
+            f"rate={args.rate}/s threads={args.threads} concurrency/thread={args.concurrency}",
+            file=sys.stderr,
+        )
+
+        workers = [
+            threading.Thread(target=worker, args=(i, batches, csv_writer, f, csv_lock, db_conn, db_lock, run_id, args, stats, stats_lock), daemon=True)
+            for i in range(args.threads)
+        ]
+        for t in workers:
+            t.start()
+
+        try:
+            for batch in chunked(iter_targets(args.cidr, ports), args.batch_size):
+                batches.put(batch)
+            for _ in workers:
+                batches.put(None)
+            batches.join()
+        except KeyboardInterrupt:
+            print("\nInterrupted; partial results saved.", file=sys.stderr)
+            return 130
+        finally:
+            stop_progress.set()
+            for _ in workers:
+                try:
+                    batches.put_nowait(None)
+                except queue.Full:
+                    pass
+            for t in workers:
+                t.join(timeout=1.0)
+
+    elapsed = time.time() - started
+    if db_conn is not None and run_id is not None:
+        with db_conn.cursor() as cur:
+            cur.execute("UPDATE scan_runs SET finished_at = now() WHERE id = %s", (run_id,))
+        db_conn.commit()
+        db_conn.close()
+    target = f"Postgres run_id={run_id}" if args.no_csv else str(out)
+    print(f"Done in {elapsed:.1f}s. Open ports: {stats['open']:,}. Results: {target}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

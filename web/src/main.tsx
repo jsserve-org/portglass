@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ExternalLink,
   Globe,
+  LogOut,
   MapPin,
   Monitor,
   Radio,
@@ -14,9 +15,15 @@ import {
   Server,
   Shield,
   Terminal,
+  User,
   Wifi,
+  Zap,
 } from 'lucide-react';
+import { createAuthClient } from 'better-auth/client';
 import './style.css';
+
+/* ─── Auth Client ─── */
+const authClient = createAuthClient({ baseURL: '' });
 
 type Finding = {
   id: number;
@@ -53,14 +60,9 @@ const api = async <T,>(path: string): Promise<T> => {
   return res.json();
 };
 
-/* ─── Mini Components ─── */
+/* ─── Components ─── */
 function Badge({ children, variant = 'green' }: { children: React.ReactNode; variant?: 'green' | 'amber' | 'cyan' | 'slate' }) {
-  const map = {
-    green: 'badge-green',
-    amber: 'badge-amber',
-    cyan: 'badge-cyan',
-    slate: 'badge-slate',
-  };
+  const map = { green: 'badge-green', amber: 'badge-amber', cyan: 'badge-cyan', slate: 'badge-slate' };
   return <span className={`badge ${map[variant]}`}>{children}</span>;
 }
 
@@ -85,14 +87,7 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
   );
 }
 
-/* ─── Host Card ─── */
-function HostCard({
-  f,
-  idx,
-}: {
-  f: Finding;
-  idx: number;
-}) {
+function HostCard({ f, idx }: { f: Finding; idx: number }) {
   return (
     <article className="host-card">
       <div className="card-header">
@@ -136,6 +131,56 @@ function HostCard({
         </div>
       )}
     </article>
+  );
+}
+
+/* ─── Auth Nav ─── */
+function AuthNav() {
+  const { data: me } = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api<{ user: { name?: string; email?: string; image?: string } | null }>('/api/me'),
+    refetchInterval: 30000,
+  });
+
+  const { data: session, isPending } = authClient.useSession();
+  const user = session?.user ?? me?.data?.user ?? null;
+  const authConfigured = me !== undefined;
+
+  if (!authConfigured || (!user && !isPending)) {
+    if (!authConfigured) return null;
+    return (
+      <button
+        className="auth-btn"
+        onClick={() => authClient.signIn.oauth2({ providerId: 'authentik', callbackURL: window.location.href })}
+      >
+        <Shield size={14} />
+        Sign In
+      </button>
+    );
+  }
+
+  if (isPending) {
+    return <span className="auth-loading">Loading…</span>;
+  }
+
+  return (
+    <div className="auth-user">
+      {user?.image ? (
+        <img src={user.image} alt="" className="auth-avatar" />
+      ) : (
+        <div className="auth-avatar-fallback">
+          <User size={14} />
+        </div>
+      )}
+      <span className="auth-name">{user?.name || user?.email || 'User'}</span>
+      <button
+        className="auth-logout"
+        onClick={() => authClient.signOut()}
+        title="Sign out"
+      >
+        <LogOut size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -187,6 +232,7 @@ function App() {
         </div>
         <div className="nav-right">
           <StatusPill />
+          <AuthNav />
         </div>
       </nav>
 
@@ -233,7 +279,7 @@ function App() {
         <StatChip label="Findings" value={stats.data?.findings} icon={<Radio size={16} />} />
         <StatChip label="Hosts" value={stats.data?.hosts} icon={<Globe size={16} />} />
         <StatChip label="Ports" value={stats.data?.ports} icon={<Server size={16} />} />
-        <StatChip label="Runs" value={stats.data?.runs} icon={<Activity size={16} />} />
+        <StatChip label="Runs" value={stats.data?.runs} icon={<Zap size={16} />} />
       </div>
 
       {/* Main Content */}

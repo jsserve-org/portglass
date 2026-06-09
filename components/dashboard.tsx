@@ -20,6 +20,7 @@ import HostCard from './host-card';
 import AuthNav from './auth-nav';
 import ScanModal from './scan-modal';
 import { Plus } from 'lucide-react';
+import Link from 'next/link';
 
 type Finding = {
   id: number;
@@ -195,19 +196,21 @@ function DashboardInner() {
             <h4>Recent Scans</h4>
             <div className="scan-list">
               {(runs.data ?? []).slice(0, 8).map((run) => (
-                <div key={run.id} className={`scan-item ${!run.finishedAt ? 'scan-active' : ''}`}>
-                  <div className="scan-row">
-                    <MapPin size={12} />
-                    <span className="scan-cidr">{run.cidr}</span>
-                    {!run.finishedAt && <span className="scan-pulse" />}
+                <Link key={run.id} href={`/scan/${run.id}`} className="scan-item-link">
+                  <div className={`scan-item ${!run.finishedAt ? 'scan-active' : ''}`}>
+                    <div className="scan-row">
+                      <MapPin size={12} />
+                      <span className="scan-cidr">{run.cidr}</span>
+                      {!run.finishedAt && <span className="scan-pulse" />}
+                    </div>
+                    <div className="scan-row muted">
+                      <Monitor size={12} />
+                      <span>{run.ports.split(',').length} ports</span>
+                      <span className="spacer" />
+                      <span className={!run.finishedAt ? 'scan-status-active' : ''}>{run.finishedAt ? 'Done' : 'Active'}</span>
+                    </div>
                   </div>
-                  <div className="scan-row muted">
-                    <Monitor size={12} />
-                    <span>{run.ports.split(',').length} ports</span>
-                    <span className="spacer" />
-                    <span className={!run.finishedAt ? 'scan-status-active' : ''}>{run.finishedAt ? 'Done' : 'Active'}</span>
-                  </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>

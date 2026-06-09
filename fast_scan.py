@@ -34,6 +34,16 @@ TOP_100_PORTS = [
 ]
 
 
+HTTP_PROBE_PORTS = frozenset([
+    80, 81, 88, 443, 3000, 3128, 4444, 4567, 5000, 5001, 5050, 5100,
+    5222, 5432, 5443, 5555, 5601, 5800, 5900, 5984, 6000, 6080, 6443,
+    7000, 7001, 7070, 7474, 7687, 8000, 8008, 8009, 8080, 8081, 8088,
+    8090, 8091, 8181, 8222, 8443, 8501, 8834, 8880, 8883, 8888, 9000,
+    9001, 9042, 9043, 9090, 9091, 9092, 9200, 9443, 9600, 9981, 10000,
+    10443, 12443, 15672, 27017, 28015, 50000,
+])
+
+
 @dataclass(frozen=True)
 class Finding:
     ip: str
@@ -41,6 +51,7 @@ class Finding:
     state: str
     latency_ms: float
     banner: str = ""
+    headers: str = ""
 
 
 class AsyncRateLimiter:
@@ -141,13 +152,32 @@ async def scan_once(
         reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
         latency_ms = (time.perf_counter() - started) * 1000.0
         banner_text = ""
-        if banner:
+        headers_text = ""
+        if banner or port in HTTP_PROBE_PORTS:
             try:
-                data = await asyncio.wait_for(reader.read(128), timeout=min(timeout, 1.0))
-                banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+                if port in HTTP_PROBE_PORTS:
+                    probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
+                    writer.write(probe.encode())
+                    await writer.drain()
+                    data = await asyncio.wait_for(reader.read(4096), timeout=min(timeout, 2.0))
+                    response = data.decode("utf-8", errors="replace")
+                    # Extract headers (before first blank line)
+                    parts = response.split("\r\n\r\n", 1)
+                    if parts and parts[0].startswith("HTTP/"):
+                        headers_text = parts[0]
+                    else:
+                        # Try \n\n split
+                        parts2 = response.split("\n\n", 1)
+                        if parts2 and parts2[0].startswith("HTTP/"):
+                            headers_text = parts2[0]
+                        else:
+                            banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
+                else:
+                    data = await asyncio.wait_for(reader.read(128), timeout=min(timeout, 1.0))
+                    banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
             except Exception:
-                banner_text = ""
-        return Finding(ip=ip, port=port, state="open", latency_ms=latency_ms, banner=banner_text)
+                pass
+        return Finding(ip=ip, port=port, state="open", latency_ms=latency_ms, banner=banner_text, headers=headers_text)
     except (asyncio.TimeoutError, OSError, ConnectionError):
         return None
     finally:
@@ -175,9 +205,11 @@ async def verify_open(
         again = await scan_once(ip, port, timeout, limiter, banner)
         if again is None:
             return None
-        # Keep the first/fast latency, but retain a later banner if first was empty.
+        # Keep the first/fast latency, but retain a later banner/headers if first was empty.
         if not finding.banner and again.banner:
-            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner)
+            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner, finding.headers)
+        if not finding.headers and again.headers:
+            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, finding.banner, again.headers)
     return finding
 
 
@@ -209,7 +241,7 @@ def writerow_safe(csv_writer: csv.writer | None, csv_file, lock: threading.Lock,
     if csv_writer is None:
         return
     with lock:
-        csv_writer.writerow([finding.ip, finding.port, finding.state, f"{finding.latency_ms:.1f}", finding.banner])
+        csv_writer.writerow([finding.ip, finding.port, finding.state, f"{finding.latency_ms:.1f}", finding.banner, finding.headers])
         if csv_file is not None:
             csv_file.flush()
 
@@ -221,15 +253,16 @@ def db_insert_findings(db_conn, db_lock: threading.Lock, run_id: int | None, fin
         with db_conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner, headers)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id, ip, port) DO UPDATE SET
                   state = EXCLUDED.state,
                   latency_ms = EXCLUDED.latency_ms,
                   banner = EXCLUDED.banner,
+                  headers = EXCLUDED.headers,
                   observed_at = now()
                 """,
-                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner) for f in findings],
+                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner, f.headers) for f in findings],
             )
         db_conn.commit()
 
@@ -375,7 +408,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     with file_cm as f:
         csv_writer = None if args.no_csv else csv.writer(f)
         if csv_writer is not None:
-            csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner"])
+            csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner", "headers"])
 
         progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
         progress.start()

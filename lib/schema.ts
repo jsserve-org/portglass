@@ -18,6 +18,7 @@ export const portFindings = pgTable('port_findings', {
   state: text('state').notNull().default('open'),
   latencyMs: real('latency_ms'),
   banner: text('banner'),
+  headers: text('headers'),
   service: text('service'),
   product: text('product'),
   observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),

@@ -1,4 +1,5 @@
 import { ExternalLink, Terminal, Wifi } from 'lucide-react';
+import Link from 'next/link';
 
 export default function HostCard({
   f,
@@ -22,10 +23,10 @@ export default function HostCard({
         <div className="card-left">
           <span className="idx">#{String(idx + 1).padStart(3, '0')}</span>
           <div className="host-info">
-            <a className="ip-link" href={`?q=${f.ip}`}>
+            <Link className="ip-link" href={`/host/${encodeURIComponent(f.ip)}`}>
               {f.ip}
               <ExternalLink size={12} />
-            </a>
+            </Link>
             <div className="host-meta">
               <span className="badge badge-green">OPEN</span>
               <span className="badge badge-cyan">PORT {f.port}</span>

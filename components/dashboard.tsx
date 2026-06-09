@@ -107,8 +107,17 @@ function DashboardInner() {
     refetchInterval: 30000,
   });
 
+  const uniqueRows = React.useMemo(() => {
+    const seen = new Set<string>();
+    return (findings.data?.rows ?? []).filter((row) => {
+      if (seen.has(row.ip)) return false;
+      seen.add(row.ip);
+      return true;
+    });
+  }, [findings.data?.rows]);
+
   const total = findings.data?.total ?? 0;
-  const rows = findings.data?.rows ?? [];
+  const rows = uniqueRows;
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(start + pageSize - 1, total);
 

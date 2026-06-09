@@ -294,6 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres connection URL; also reads DATABASE_URL")
     p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
     p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
+    p.add_argument("--run-id", type=int, default=None, help="Existing scan_runs id to use (skip INSERT)")
     p.add_argument("--yes-i-own-this-network", action="store_true", help="Required acknowledgement for authorized scanning")
     return p
 
@@ -332,14 +333,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             import psycopg
             db_conn = psycopg.connect(args.db_url)
-            with db_conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO scan_runs (cidr, ports) VALUES (%s, %s) RETURNING id",
-                    (str(net), ",".join(map(str, ports))),
-                )
-                run_id = cur.fetchone()[0]
-            db_conn.commit()
-            print(f"Writing open-port findings to Postgres run_id={run_id}", file=sys.stderr)
+            if args.run_id is not None:
+                run_id = args.run_id
+                with db_conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE scan_runs SET cidr = %s, ports = %s, started_at = now(), finished_at = NULL WHERE id = %s",
+                        (str(net), ",".join(map(str, ports)), run_id),
+                    )
+                db_conn.commit()
+                print(f"Resuming scan run_id={run_id}", file=sys.stderr)
+            else:
+                with db_conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO scan_runs (cidr, ports) VALUES (%s, %s) RETURNING id",
+                        (str(net), ",".join(map(str, ports))),
+                    )
+                    run_id = cur.fetchone()[0]
+                db_conn.commit()
+                print(f"Writing open-port findings to Postgres run_id={run_id}", file=sys.stderr)
         except ImportError:
             print("Postgres output requires psycopg. Install with: python3 -m pip install 'psycopg[binary]'", file=sys.stderr)
             return 2

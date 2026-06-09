@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import HostCard from './host-card';
 import AuthNav from './auth-nav';
+import ScanModal from './scan-modal';
+import { Plus } from 'lucide-react';
 
 type Finding = {
   id: number;
@@ -79,6 +81,7 @@ function DashboardInner() {
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
   const [page, setPage] = React.useState(1);
+  const [showScan, setShowScan] = React.useState(false);
   const pageSize = 25;
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -119,6 +122,9 @@ function DashboardInner() {
           <a href="/" className="nav-link active">Search</a>
         </div>
         <div className="nav-right">
+          <button className="scan-btn" onClick={() => setShowScan(true)}>
+            <Plus size={14} /> New Scan
+          </button>
           <StatusPill />
           <AuthNav />
         </div>
@@ -162,6 +168,8 @@ function DashboardInner() {
         <StatChip label="Runs" value={stats.data?.runs} icon={<Zap size={16} />} />
       </div>
 
+      {showScan && <ScanModal onClose={() => setShowScan(false)} onStarted={() => runs.refetch()} />}
+
       <main className="results">
         <aside className="filters">
           <div className="filter-panel">
@@ -186,17 +194,18 @@ function DashboardInner() {
           <div className="filter-panel">
             <h4>Recent Scans</h4>
             <div className="scan-list">
-              {(runs.data ?? []).slice(0, 6).map((run) => (
-                <div key={run.id} className="scan-item">
+              {(runs.data ?? []).slice(0, 8).map((run) => (
+                <div key={run.id} className={`scan-item ${!run.finishedAt ? 'scan-active' : ''}`}>
                   <div className="scan-row">
                     <MapPin size={12} />
                     <span className="scan-cidr">{run.cidr}</span>
+                    {!run.finishedAt && <span className="scan-pulse" />}
                   </div>
                   <div className="scan-row muted">
                     <Monitor size={12} />
                     <span>{run.ports.split(',').length} ports</span>
                     <span className="spacer" />
-                    <span>{run.finishedAt ? 'Done' : 'Active'}</span>
+                    <span className={!run.finishedAt ? 'scan-status-active' : ''}>{run.finishedAt ? 'Done' : 'Active'}</span>
                   </div>
                 </div>
               ))}

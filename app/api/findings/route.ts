@@ -1,8 +1,7 @@
 import { db } from '@/lib/db';
-import { portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
-import { and, count, desc, eq, ilike, or } from 'drizzle-orm';
 import { headers } from 'next/headers';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 const querySchema = z.object({
@@ -20,38 +19,66 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = querySchema.parse(Object.fromEntries(searchParams));
-
-  const filters = [];
-  if (query.port) filters.push(eq(portFindings.port, query.port));
-  if (query.q) {
-    const needle = `%${query.q}%`;
-    filters.push(
-      or(
-        ilike(portFindings.ip, needle),
-        ilike(portFindings.banner, needle),
-        ilike(portFindings.service, needle),
-        ilike(portFindings.product, needle),
-      ),
-    );
-  }
-
-  const where = filters.length ? and(...filters) : undefined;
   const offset = (query.page - 1) * query.pageSize;
+  const port = query.port ?? null;
+  const needle = query.q ? `%${query.q}%` : null;
 
-  const [rows, totalRows] = await Promise.all([
-    db
-      .select()
-      .from(portFindings)
-      .where(where)
-      .orderBy(desc(portFindings.observedAt))
-      .limit(query.pageSize)
-      .offset(offset),
-    db.select({ value: count() }).from(portFindings).where(where),
+  // The search view intentionally returns one card per IP address. If a host
+  // has multiple matching open ports, keep the most recently observed finding
+  // as the representative row; the host detail page shows the full port list.
+  const rowsQuery = sql`
+    SELECT * FROM (
+      SELECT DISTINCT ON (ip)
+        id,
+        run_id AS "runId",
+        ip,
+        port,
+        state,
+        latency_ms AS "latencyMs",
+        banner,
+        headers,
+        service,
+        product,
+        observed_at AS "observedAt"
+      FROM port_findings
+      WHERE (${port}::int IS NULL OR port = ${port})
+        AND (
+          ${needle}::text IS NULL
+          OR ip ILIKE ${needle}
+          OR COALESCE(banner, '') ILIKE ${needle}
+          OR COALESCE(headers, '') ILIKE ${needle}
+          OR COALESCE(service, '') ILIKE ${needle}
+          OR COALESCE(product, '') ILIKE ${needle}
+        )
+      ORDER BY ip, observed_at DESC
+    ) one_per_ip
+    ORDER BY "observedAt" DESC
+    LIMIT ${query.pageSize}
+    OFFSET ${offset}
+  `;
+
+  const countQuery = sql`
+    SELECT COUNT(DISTINCT ip)::int AS value
+    FROM port_findings
+    WHERE (${port}::int IS NULL OR port = ${port})
+      AND (
+        ${needle}::text IS NULL
+        OR ip ILIKE ${needle}
+        OR COALESCE(banner, '') ILIKE ${needle}
+        OR COALESCE(headers, '') ILIKE ${needle}
+        OR COALESCE(service, '') ILIKE ${needle}
+        OR COALESCE(product, '') ILIKE ${needle}
+      )
+  `;
+
+  const [rowsResult, totalRows] = await Promise.all([
+    db.execute(rowsQuery),
+    db.execute(countQuery),
   ]);
 
   return Response.json({
-    rows,
-    total: Number(totalRows[0]?.value ?? 0),
+    rows: rowsResult.rows,
+    total: Number((totalRows.rows[0] as any)?.value ?? 0),
     page: query.page,
     pageSize: query.pageSize,
   });

@@ -44,8 +44,8 @@ export async function POST(request: Request) {
   }
 
   const ports = String(body.ports ?? 'common').trim();
-  const threads = Math.min(Math.max(parseInt(body.threads ?? '4', 10), 1), 32);
-  const concurrency = Math.min(Math.max(parseInt(body.concurrency ?? '512', 10), 1), 4096);
+  const threads = Math.min(Math.max(parseInt(body.threads ?? '2', 10), 1), 8);
+  const concurrency = Math.min(Math.max(parseInt(body.concurrency ?? '256', 10), 1), 2048);
   const timeout = Math.min(Math.max(parseFloat(body.timeout ?? '0.8'), 0.1), 10);
   const rate = Math.min(Math.max(parseFloat(body.rate ?? '250'), 0), 10000);
   const verifyRetries = Math.min(Math.max(parseInt(body.verifyRetries ?? '0', 10), 0), 5);

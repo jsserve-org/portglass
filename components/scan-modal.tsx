@@ -15,8 +15,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [cidr, setCidr] = useState("");
   const [preset, setPreset] = useState("common");
   const [customPorts, setCustomPorts] = useState("");
-  const [threads, setThreads] = useState(4);
-  const [concurrency, setConcurrency] = useState(512);
+  const [threads, setThreads] = useState(2);
+  const [concurrency, setConcurrency] = useState(256);
   const [timeout, setTimeout] = useState(0.8);
   const [rate, setRate] = useState(250);
   const [advanced, setAdvanced] = useState(false);
@@ -110,12 +110,12 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               <div className="modal-advanced">
                 <div className="modal-row">
                   <div>
-                    <label className="modal-label-small">Threads</label>
-                    <input className="modal-input-small" type="number" min={1} max={32} value={threads} onChange={(e) => setThreads(parseInt(e.target.value))} />
+                    <label className="modal-label-small">Threads (max 8)</label>
+                    <input className="modal-input-small" type="number" min={1} max={8} value={threads} onChange={(e) => setThreads(parseInt(e.target.value))} />
                   </div>
                   <div>
                     <label className="modal-label-small">Concurrency</label>
-                    <input className="modal-input-small" type="number" min={1} max={4096} value={concurrency} onChange={(e) => setConcurrency(parseInt(e.target.value))} />
+                    <input className="modal-input-small" type="number" min={1} max={2048} value={concurrency} onChange={(e) => setConcurrency(parseInt(e.target.value))} />
                   </div>
                   <div>
                     <label className="modal-label-small">Timeout (s)</label>

@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """
-Fast authorized TCP port scanner.
+Fast authorized TCP port scanner with SOCKS5 proxy support and host discovery.
 
 Designed for defensive inventory of networks you own/administer. It uses multiple
 OS threads, each running an asyncio event loop, to perform TCP connect checks.
+
+Host discovery pre-phase:
+  A quick sweep over a small set of common ports finds the alive hosts first.
+  The full port scan then runs only on discovered responsive IPs, which is
+  much faster on large ranges with many offline addresses.
+
+Proxy support:
+  --proxy socks5://host:port routes every TCP connect through a SOCKS5 proxy.
 """
 from __future__ import annotations
 
@@ -15,6 +23,7 @@ import contextlib
 import os
 import queue
 import socket
+import struct
 import sys
 import threading
 import time
@@ -158,6 +167,65 @@ def parse_ports(spec: str) -> list[int]:
     return sorted(ports)
 
 
+def parse_proxy(proxy_str: str | None) -> tuple[str, int] | None:
+    if not proxy_str:
+        return None
+    s = proxy_str.strip()
+    if s.startswith("socks5://"):
+        s = s[9:]
+    host, port_s = s.rsplit(":", 1)
+    return host, int(port_s)
+
+
+async def socks5_connect(proxy_host: str, proxy_port: int, target_ip: str, target_port: int, timeout: float):
+    """Open a TCP connection through a SOCKS5 proxy. Returns (reader, writer)."""
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(proxy_host, proxy_port), timeout=timeout
+    )
+    try:
+        # Greeting: ver 5, 1 method, no-auth (0x00)
+        writer.write(bytes([0x05, 0x01, 0x00]))
+        await writer.drain()
+        resp = await asyncio.wait_for(reader.readexactly(2), timeout=timeout)
+        if resp[0] != 0x05 or resp[1] != 0x00:
+            raise ConnectionError(f"SOCKS5 auth negotiation failed: {resp.hex()}")
+
+        # Connect request: ver 5, cmd connect (0x01), reserved, ATYP IPv4 (0x01)
+        ip_bytes = socket.inet_aton(target_ip)
+        req = bytes([0x05, 0x01, 0x00, 0x01]) + ip_bytes + struct.pack(">H", target_port)
+        writer.write(req)
+        await writer.drain()
+
+        # Read reply header (first 4 bytes)
+        header = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
+        if header[0] != 0x05:
+            raise ConnectionError(f"SOCKS5 unexpected reply version: {header[0]}")
+        if header[1] != 0x00:
+            raise ConnectionError(f"SOCKS5 connect failed with code {header[1]}")
+        atyp = header[3]
+        if atyp == 0x01:  # IPv4
+            await asyncio.wait_for(reader.readexactly(4 + 2), timeout=timeout)
+        elif atyp == 0x03:  # Domain
+            dlen = await asyncio.wait_for(reader.readexactly(1), timeout=timeout)
+            await asyncio.wait_for(reader.readexactly(dlen[0] + 2), timeout=timeout)
+        elif atyp == 0x04:  # IPv6
+            await asyncio.wait_for(reader.readexactly(16 + 2), timeout=timeout)
+        return reader, writer
+    except Exception:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        raise
+
+
+async def _open_connection(ip: str, port: int, timeout: float, proxy: tuple[str, int] | None):
+    if proxy is None:
+        return await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+    return await socks5_connect(proxy[0], proxy[1], ip, port, timeout=timeout)
+
+
 def iter_targets(cidr: str, ports: Sequence[int]) -> Iterator[tuple[str, int]]:
     net = ipaddress.ip_network(cidr, strict=False)
     if net.version != 4:
@@ -185,6 +253,7 @@ async def scan_once(
     timeout: float,
     limiter: AsyncRateLimiter,
     banner: bool,
+    proxy: tuple[str, int] | None,
     on_attempt=None,
 ) -> Finding | None:
     await limiter.wait()
@@ -193,7 +262,7 @@ async def scan_once(
     started = time.perf_counter()
     writer = None
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
+        reader, writer = await _open_connection(ip, port, timeout, proxy)
         latency_ms = (time.perf_counter() - started) * 1000.0
         banner_text = ""
         headers_text = ""
@@ -207,12 +276,10 @@ async def scan_once(
                     await writer.drain()
                     data = await asyncio.wait_for(reader.read(4096), timeout=min(timeout, 2.0))
                     response = data.decode("utf-8", errors="replace")
-                    # Extract headers (before first blank line)
                     parts = response.split("\r\n\r\n", 1)
                     if parts and parts[0].startswith("HTTP/"):
                         headers_text = parts[0]
                     else:
-                        # Try \n\n split
                         parts2 = response.split("\n\n", 1)
                         if parts2 and parts2[0].startswith("HTTP/"):
                             headers_text = parts2[0]
@@ -244,16 +311,16 @@ async def verify_open(
     limiter: AsyncRateLimiter,
     retries: int,
     banner: bool,
+    proxy: tuple[str, int] | None,
     on_attempt=None,
 ) -> Finding | None:
-    finding = await scan_once(ip, port, timeout, limiter, banner, on_attempt=on_attempt)
+    finding = await scan_once(ip, port, timeout, limiter, banner, proxy, on_attempt=on_attempt)
     if finding is None:
         return None
     for _ in range(max(0, retries)):
-        again = await scan_once(ip, port, timeout, limiter, banner)
+        again = await scan_once(ip, port, timeout, limiter, banner, proxy)
         if again is None:
             return None
-        # Keep the first/fast latency, but retain a later banner/headers if first was empty.
         if not finding.banner and again.banner:
             finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner, finding.headers)
         if again.headers and (not finding.headers or (again.headers.startswith("HTTP/") and not finding.headers.startswith("HTTP/"))):
@@ -269,6 +336,7 @@ async def scan_batch(
     per_thread_rate: float,
     verify_retries: int,
     banner: bool,
+    proxy: tuple[str, int] | None,
     on_attempt=None,
 ) -> list[Finding]:
     limiter = AsyncRateLimiter(per_thread_rate)
@@ -277,12 +345,51 @@ async def scan_batch(
 
     async def runner(ip: str, port: int) -> None:
         async with sem:
-            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, on_attempt=on_attempt)
+            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, proxy, on_attempt=on_attempt)
             if finding is not None:
                 results.append(finding)
 
     await asyncio.gather(*(runner(ip, port) for ip, port in batch))
     return results
+
+
+async def discover_hosts(
+    cidr: str,
+    ports: Sequence[int],
+    *,
+    concurrency: int,
+    timeout: float,
+    rate: float,
+    threads: int,
+    proxy: tuple[str, int] | None,
+) -> set[str]:
+    """Quickly find alive hosts by probing a small set of ports."""
+    net = ipaddress.ip_network(cidr, strict=False)
+    hosts = [str(ip) for ip in net.hosts()]
+    total = len(hosts) * len(ports)
+    if total == 0:
+        return set()
+
+    print(f"Discovery phase: {len(hosts):,} hosts × {len(ports)} port(s) = {total:,} quick probes", file=sys.stderr)
+    limiter = AsyncRateLimiter(rate / threads if threads > 0 and rate > 0 else 0)
+    sem = asyncio.Semaphore(concurrency)
+    alive: set[str] = set()
+    attempted = 0
+
+    async def probe(ip: str, port: int) -> None:
+        nonlocal attempted
+        async with sem:
+            await limiter.wait()
+            attempted += 1
+            try:
+                await _open_connection(ip, port, timeout, proxy)
+                alive.add(ip)
+            except Exception:
+                pass
+
+    await asyncio.gather(*(probe(ip, port) for ip in hosts for port in ports))
+    print(f"Discovery found {len(alive):,} alive host(s) out of {len(hosts):,}", file=sys.stderr)
+    return alive
 
 
 def writerow_safe(csv_writer: csv.writer | None, csv_file, lock: threading.Lock, finding: Finding) -> None:
@@ -329,6 +436,7 @@ def worker(
     stats_lock: threading.Lock,
 ) -> None:
     per_thread_rate = (args.rate / args.threads) if args.rate > 0 else 0
+    proxy = parse_proxy(args.proxy)
     while True:
         batch = batches.get()
         if batch is None:
@@ -347,6 +455,7 @@ def worker(
                     per_thread_rate=per_thread_rate,
                     verify_retries=args.verify_retries,
                     banner=args.banner,
+                    proxy=proxy,
                     on_attempt=mark_attempt,
                 )
             )
@@ -390,6 +499,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
     p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
     p.add_argument("--run-id", type=int, default=None, help="Existing scan_runs id to use (skip INSERT)")
+    p.add_argument("--proxy", default=os.environ.get("SCAN_PROXY"), help="SOCKS5 proxy host:port (also SCAN_PROXY env var)")
+    p.add_argument("--discover", action="store_true", help="Quickly discover alive hosts first, then full-scan only those")
+    p.add_argument("--discover-ports", default="22,80,443,445,3389", help="Ports used for host discovery (default: 22,80,443,445,3389)")
+    p.add_argument("--discover-timeout", type=float, default=0.6, help="Discovery connect timeout (default: 0.6)")
     p.add_argument("--yes-i-own-this-network", action="store_true", help="Required acknowledgement for authorized scanning")
     return p
 
@@ -403,7 +516,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("threads, concurrency, and batch-size must be positive", file=sys.stderr)
         return 2
 
-    # Raise fd limit where possible because high concurrency needs many sockets.
     try:
         import resource
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -414,7 +526,34 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ports = parse_ports(args.ports)
     net = ipaddress.ip_network(args.cidr, strict=False)
-    total = max(0, net.num_addresses - 2) * len(ports) if net.prefixlen < 31 else net.num_addresses * len(ports)
+
+    proxy = parse_proxy(args.proxy)
+    if proxy:
+        print(f"Routing through SOCKS5 proxy {proxy[0]}:{proxy[1]}", file=sys.stderr)
+
+    alive_hosts: set[str] | None = None
+    if args.discover:
+        discover_ports = parse_ports(args.discover_ports)
+        alive_hosts = asyncio.run(discover_hosts(
+            args.cidr,
+            discover_ports,
+            concurrency=args.concurrency,
+            timeout=args.discover_timeout,
+            rate=args.rate,
+            threads=args.threads,
+            proxy=proxy,
+        ))
+        if not alive_hosts:
+            print("No alive hosts discovered. Exiting.", file=sys.stderr)
+            return 0
+
+    def target_iter() -> Iterator[tuple[str, int]]:
+        hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
+        for ip in hosts:
+            for port in ports:
+                yield ip, port
+
+    total = sum(1 for _ in target_iter())
 
     out = Path(args.output)
     batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
@@ -475,7 +614,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             t.start()
 
         try:
-            for batch in chunked(iter_targets(args.cidr, ports), args.batch_size):
+            for batch in chunked(target_iter(), args.batch_size):
                 batches.put(batch)
             for _ in workers:
                 batches.put(None)

@@ -51,6 +51,8 @@ export async function POST(request: Request) {
   const rate = Math.min(Math.max(parseFloat(body.rate ?? '250'), 0), 10000);
   const verifyRetries = Math.min(Math.max(parseInt(body.verifyRetries ?? '0', 10), 0), 5);
   const banner = !!body.banner;
+  const proxy = String(body.proxy ?? '').trim();
+  const discover = !!body.discover;
 
   // Insert scan_runs record so we know the run_id immediately
   const [run] = await db
@@ -80,6 +82,11 @@ export async function POST(request: Request) {
   ];
   if (verifyRetries > 0) args.push('--verify-retries', String(verifyRetries));
   if (banner) args.push('--banner');
+  if (proxy) {
+    args.push('--proxy', proxy);
+    env['SCAN_PROXY'] = proxy;
+  }
+  if (discover) args.push('--discover');
 
   const child = spawn('python3', args, {
     cwd: '/app',

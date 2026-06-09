@@ -22,6 +22,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [advanced, setAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [proxy, setProxy] = useState("");
+  const [discover, setDiscover] = useState(false);
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -49,6 +51,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
           concurrency,
           timeout,
           rate,
+          proxy: proxy.trim() || undefined,
+          discover,
         }),
       });
       const data = await res.json();
@@ -126,6 +130,19 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                     <input className="modal-input-small" type="number" min={0} max={10000} value={rate} onChange={(e) => setRate(parseFloat(e.target.value))} />
                   </div>
                 </div>
+                <div style={{ marginTop: 10 }}>
+                  <label className="modal-label-small">SOCKS5 Proxy (optional)</label>
+                  <input
+                    className="modal-input"
+                    value={proxy}
+                    onChange={(e) => setProxy(e.target.value)}
+                    placeholder="host:port"
+                  />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={discover} onChange={(e) => setDiscover(e.target.checked)} />
+                  Discover alive hosts first (fast pre-scan, then full scan only responsive IPs)
+                </label>
               </div>
             )}
           </div>

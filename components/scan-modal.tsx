@@ -4,10 +4,10 @@ import { useState } from "react";
 import { X, Play, Radio, ChevronDown, ChevronUp } from "lucide-react";
 
 const PRESETS = [
-  { label: "Common (7 ports)", value: "common" },
-  { label: "Top 100", value: "top100" },
+  { label: "Common (21,22,23,53,80,443,554,8443,9000,9443,5000,5001,8080,3389,3306,5432...)", value: "common" },
   { label: "Web only (80,443,8080,8443)", value: "80,443,8080,8443" },
   { label: "Full 1-1024", value: "1-1024" },
+  { label: "All ports (1-65535)", value: "all" },
   { label: "Custom", value: "custom" },
 ];
 

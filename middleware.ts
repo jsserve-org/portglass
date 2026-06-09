@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 function hasSessionCookie(req: NextRequest): boolean {
-  return req.cookies.getAll().some((c) => c.name.startsWith('better-auth.session-token'));
+  return req.cookies.getAll().some((c) => c.name === 'better-auth.session_token' || c.name === 'better-auth-session_token');
 }
 
 export function middleware(request: NextRequest) {

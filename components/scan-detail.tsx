@@ -109,7 +109,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} className="spin" />
+          <Activity size={32} />
           <p>Loading scan details…</p>
         </div>
       </div>
@@ -196,12 +196,12 @@ function ScanDetailInner({ runId }: { runId: string }) {
           <div className="scan-progress-box">
             <div className="scan-progress-header">
               <span className="scan-progress-title">
-                <Activity size={14} className="spin" /> Scanning in progress…
+                Scanning in progress…
               </span>
               <span className="scan-progress-pct">Live</span>
             </div>
             <div className="progress-track">
-              <div className="progress-fill progress-pulse" style={{ width: "100%" }} />
+              <div className="progress-fill" style={{ width: "100%" }} />
             </div>
             <div className="scan-progress-stats">
               <span><Clock size={12} /> Elapsed {fmtElapsed(elapsedSec)}</span>
@@ -246,7 +246,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
 
         {!ai && summary.isLoading && (
           <div className="scan-ai-summary loading">
-            <Activity size={16} className="spin" /> Generating summary…
+            Generating summary…
           </div>
         )}
 

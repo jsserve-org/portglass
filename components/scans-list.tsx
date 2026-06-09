@@ -50,7 +50,7 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "active")
     return (
       <span className="scan-status-badge scan-status-active">
-        <Activity size={10} className="spin" /> Active
+        Active
       </span>
     );
   if (status === "completed")
@@ -76,7 +76,7 @@ function ProgressBar({ pct }: { pct: number }) {
   return (
     <div className="progress-track">
       <div
-        className={`progress-fill ${pct < 100 ? "progress-pulse" : ""}`}
+        className="progress-fill"
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
       />
     </div>

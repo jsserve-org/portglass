@@ -63,7 +63,7 @@ function HostDetailInner({ ip }: { ip: string }) {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} className="spin" />
+          <Activity size={32} />
           <p>Loading host details…</p>
         </div>
       </div>

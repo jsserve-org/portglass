@@ -276,7 +276,7 @@ function DashboardInner() {
               Showing <b>{rows.length ? `${start}–${end}` : '0'}</b> of <b>{total.toLocaleString()}</b> results
             </span>
             <span className="results-refresh">
-              <Activity size={13} className="spin" />
+              <Activity size={13} />
               Auto-refresh on
             </span>
           </div>

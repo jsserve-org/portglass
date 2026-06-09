@@ -99,12 +99,7 @@ html, body {
   height: 7px;
   border-radius: 50%;
   background: var(--accent-green);
-  animation: pulse-dot 2s infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  background: var(--accent-green);
 }
 
 /* Auth UI */
@@ -476,8 +471,6 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-.spin { animation: spin 1.5s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Host Cards */
 .results-list { display: flex; flex-direction: column; gap: 14px; }
@@ -690,7 +683,7 @@ html, body {
   justify-content: center;
   min-height: 100vh;
   padding: 24px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.06) 0%, transparent 60%), var(--bg);
+  background: var(--bg);
 }
 
 .login-card {
@@ -916,7 +909,7 @@ html, body {
   height: 6px;
   border-radius: 50%;
   background: var(--accent-cyan);
-  animation: pulse-dot 1.5s infinite;
+  background: var(--accent-cyan);
   margin-left: auto;
 }
 
@@ -1648,18 +1641,9 @@ html, body {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+  background: var(--accent-green);
   border-radius: 3px;
   transition: width 0.6s ease;
-}
-
-.progress-pulse {
-  animation: progress-pulse 1.5s infinite;
-}
-
-@keyframes progress-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 /* Scan detail progress */

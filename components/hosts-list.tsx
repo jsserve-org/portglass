@@ -60,7 +60,7 @@ function HostsListInner() {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} className="spin" />
+          <Activity size={32} />
           <p>Loading hosts…</p>
         </div>
       </div>

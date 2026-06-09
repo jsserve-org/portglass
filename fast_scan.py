@@ -43,6 +43,51 @@ HTTP_PROBE_PORTS = frozenset([
     10443, 12443, 15672, 27017, 28015, 50000,
 ])
 
+SERVICE_HINTS = {
+    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp",
+    53: "dns", 69: "tftp", 80: "http", 110: "pop3", 111: "rpcbind",
+    119: "nntp", 123: "ntp", 135: "msrpc", 139: "netbios-ssn",
+    143: "imap", 161: "snmp", 389: "ldap", 443: "https", 445: "smb",
+    465: "smtps", 500: "isakmp", 514: "syslog", 554: "rtsp",
+    587: "submission", 631: "ipp", 636: "ldaps", 873: "rsync",
+    990: "ftps", 993: "imaps", 995: "pop3s", 1080: "socks",
+    1433: "mssql", 1521: "oracle", 1883: "mqtt", 2049: "nfs",
+    2375: "docker", 2376: "docker-tls", 3000: "http-alt",
+    3128: "http-proxy", 3306: "mysql", 3389: "rdp", 5432: "postgres",
+    5672: "amqp", 5900: "vnc", 5984: "couchdb", 6379: "redis",
+    6443: "kubernetes-api", 8000: "http-alt", 8008: "http-alt",
+    8080: "http-proxy", 8081: "http-alt", 8443: "https-alt",
+    8883: "mqtts", 8888: "http-alt", 9000: "http-alt", 9200: "elasticsearch",
+    9443: "https-alt", 10000: "webmin", 11211: "memcached", 15672: "rabbitmq-http",
+    27017: "mongodb",
+}
+
+
+def service_hint(port: int) -> str:
+    return SERVICE_HINTS.get(port, "tcp")
+
+
+def protocol_metadata(ip: str, port: int, latency_ms: float, probe: str, banner: str = "", http_headers: str = "") -> str:
+    """Build a headers-style protocol block for every open TCP service.
+
+    HTTP services keep their real HTTP response headers at the top; every other
+    protocol gets a synthetic metadata header block so the UI always has
+    protocol/header context even when the service is not HTTP.
+    """
+    lines = [
+        f"Protocol: tcp",
+        f"Service-Hint: {service_hint(port)}",
+        f"Endpoint: {ip}:{port}",
+        f"Probe: {probe}",
+        f"Latency-Ms: {latency_ms:.1f}",
+    ]
+    if banner:
+        lines.append(f"Banner: {banner[:512]}")
+    metadata = "\n".join(lines)
+    if http_headers:
+        return f"{http_headers}\n\n--- Portglass Protocol Metadata ---\n{metadata}"
+    return metadata
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -153,9 +198,11 @@ async def scan_once(
         latency_ms = (time.perf_counter() - started) * 1000.0
         banner_text = ""
         headers_text = ""
+        probe_kind = "tcp-connect"
         if banner or port in HTTP_PROBE_PORTS:
             try:
                 if port in HTTP_PROBE_PORTS:
+                    probe_kind = "http-get"
                     probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
                     writer.write(probe.encode())
                     await writer.drain()
@@ -173,10 +220,12 @@ async def scan_once(
                         else:
                             banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
                 else:
+                    probe_kind = "passive-banner"
                     data = await asyncio.wait_for(reader.read(128), timeout=min(timeout, 1.0))
                     banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
             except Exception:
                 pass
+        headers_text = protocol_metadata(ip, port, latency_ms, probe_kind, banner_text, headers_text)
         return Finding(ip=ip, port=port, state="open", latency_ms=latency_ms, banner=banner_text, headers=headers_text)
     except (asyncio.TimeoutError, OSError, ConnectionError):
         return None
@@ -208,7 +257,7 @@ async def verify_open(
         # Keep the first/fast latency, but retain a later banner/headers if first was empty.
         if not finding.banner and again.banner:
             finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner, finding.headers)
-        if not finding.headers and again.headers:
+        if again.headers and (not finding.headers or (again.headers.startswith("HTTP/") and not finding.headers.startswith("HTTP/"))):
             finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, finding.banner, again.headers)
     return finding
 

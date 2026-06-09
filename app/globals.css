@@ -1268,3 +1268,204 @@ html, body {
   .findings-table .cell-ellipsis { max-width: 120px; }
   .host-ports-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
+
+@media (max-width: 640px) {
+  html { font-size: 15px; }
+  body { overflow-x: hidden; }
+
+  .topnav {
+    position: sticky;
+    height: auto;
+    min-height: 56px;
+    padding: 10px 12px;
+    gap: 10px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .nav-left,
+  .nav-right {
+    width: 100%;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .nav-left { justify-content: flex-start; }
+  .nav-right { justify-content: space-between; }
+
+  .logo {
+    width: 100%;
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+
+  .nav-link,
+  .scan-btn,
+  .auth-btn,
+  .auth-logout {
+    min-height: 40px;
+    align-items: center;
+  }
+
+  .nav-link {
+    display: inline-flex;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.02);
+    border-bottom-color: var(--border);
+  }
+
+  .nav-link.active {
+    border-color: rgba(34, 197, 94, 0.45);
+    background: rgba(34, 197, 94, 0.08);
+  }
+
+  .status-pill { display: none; }
+  .auth-user { max-width: 100%; flex: 1; min-width: 0; }
+  .auth-name { max-width: 100%; }
+  .scan-btn { padding: 8px 12px; }
+
+  .search-hero { padding: 28px 14px 20px; text-align: left; }
+  .search-inner { max-width: none; }
+  .search-hero h1 { font-size: 28px; line-height: 1.1; }
+  .search-sub { font-size: 13px; line-height: 1.6; }
+
+  .search-box {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    border-radius: 14px;
+  }
+
+  .search-icon { margin-left: 14px; }
+  .search-box input { height: 48px; min-width: 0; }
+  .search-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 44px;
+    border-top: 1px solid rgba(0,0,0,0.18);
+  }
+
+  .search-tags { justify-content: flex-start; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+  .search-tags button { flex: 0 0 auto; min-height: 34px; }
+
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+  }
+  .stat-chip { min-width: 0; padding: 14px 12px; gap: 10px; }
+  .stat-chip .value { font-size: 18px; }
+
+  .filters {
+    padding: 14px;
+    overflow: hidden;
+  }
+  .filter-panel { margin-bottom: 18px; }
+  .port-grid {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .port-chip { min-width: 72px; min-height: 48px; }
+  .scan-list { display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); overflow-x: auto; }
+  .scan-item-link { min-width: 170px; }
+
+  .results-main { padding: 16px 12px 28px; }
+  .results-header { align-items: flex-start; gap: 8px; flex-direction: column; }
+  .results-refresh { font-size: 10px; }
+
+  .host-card { border-radius: 14px; }
+  .card-header { flex-direction: column; padding: 16px; gap: 12px; }
+  .card-left { width: 100%; gap: 10px; }
+  .idx { min-width: 28px; }
+  .ip-link { font-size: 14px; max-width: 100%; word-break: break-all; }
+  .card-right { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+  .banner-header { padding: 8px 16px; }
+  .banner-body { padding: 12px 16px; font-size: 11px; max-height: 180px; }
+
+  .pagination { gap: 8px; }
+  .pagination button { flex: 1; justify-content: center; padding: 11px 10px; }
+  .page-num { white-space: nowrap; }
+
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal-card {
+    max-width: none;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 18px 18px 0 0;
+    overflow-y: auto;
+  }
+  .modal-body { padding: 16px; }
+  .modal-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modal-footer { position: sticky; bottom: 0; background: var(--bg-card); }
+  .modal-btn-secondary,
+  .modal-btn-primary { flex: 1; justify-content: center; min-height: 42px; }
+
+  .scan-detail-page { padding: 18px 12px 28px; }
+  .scan-meta-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .scan-detail-header h1 { font-size: 19px; line-height: 1.25; word-break: break-word; }
+  .scan-meta-bar { gap: 8px; flex-direction: column; align-items: flex-start; }
+  .scan-summary-cards { grid-template-columns: 1fr; gap: 10px; }
+  .summary-card { padding: 14px; }
+  .scan-ai-summary { padding: 14px; }
+
+  .scan-findings-section h3 { flex-wrap: wrap; }
+  .findings-count { width: 100%; margin-left: 0; }
+  .findings-table-wrap { overflow: visible; border: none; }
+  .findings-table,
+  .findings-table thead,
+  .findings-table tbody,
+  .findings-table th,
+  .findings-table td,
+  .findings-table tr { display: block; }
+  .findings-table thead { display: none; }
+  .findings-table tbody { display: flex; flex-direction: column; gap: 12px; }
+  .findings-table tr {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .findings-table td {
+    display: grid;
+    grid-template-columns: 86px 1fr;
+    gap: 10px;
+    padding: 10px 12px;
+    min-height: 42px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .findings-table td:last-child { border-bottom: none; }
+  .findings-table td::before {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .findings-table td:nth-child(1)::before { content: "Host/Port"; }
+  .findings-table td:nth-child(2)::before { content: "Port/Scan"; }
+  .findings-table td:nth-child(3)::before { content: "Latency"; }
+  .findings-table td:nth-child(4)::before { content: "Banner"; }
+  .findings-table td:nth-child(5)::before { content: "Headers"; }
+  .findings-table td:nth-child(6)::before { content: "Open"; }
+  .findings-table .cell-ellipsis {
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .headers-block {
+    grid-column: 1 / -1;
+    max-height: 220px;
+    font-size: 10px;
+  }
+  .header-toggle { min-height: 34px; justify-content: center; }
+  .open-link { width: 36px; height: 36px; }
+
+  .expanded-row td { display: block; }
+  .expanded-row td::before { content: none; }
+  .host-ports-grid { grid-template-columns: 1fr; padding: 10px; }
+}

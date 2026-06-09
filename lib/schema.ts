@@ -7,6 +7,7 @@ export const scanRuns = pgTable('scan_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),
   scannerVersion: text('scanner_version').notNull().default('fast_scan.py'),
+  scannerPid: integer('scanner_pid'),
   notes: text('notes'),
 });
 

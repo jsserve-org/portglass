@@ -1469,3 +1469,42 @@ html, body {
   .expanded-row td::before { content: none; }
   .host-ports-grid { grid-template-columns: 1fr; padding: 10px; }
 }
+
+.danger-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--accent-red);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.danger-action-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: var(--accent-red);
+}
+
+.danger-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scan-kill-error {
+  margin-top: 12px;
+  max-width: 760px;
+}
+
+@media (max-width: 640px) {
+  .danger-action-btn {
+    width: 100%;
+    min-height: 42px;
+  }
+}

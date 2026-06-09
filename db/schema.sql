@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS scan_runs (
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at TIMESTAMPTZ,
   scanner_version TEXT NOT NULL DEFAULT 'fast_scan.py',
+  scanner_pid INTEGER,
   notes TEXT
 );
 

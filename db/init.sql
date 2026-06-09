@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS scan_runs (
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at TIMESTAMPTZ,
   scanner_version TEXT NOT NULL DEFAULT 'fast_scan.py',
+  scanner_pid INTEGER,
   notes TEXT
 );
 
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS port_findings (
   state TEXT NOT NULL DEFAULT 'open',
   latency_ms REAL,
   banner TEXT,
+  headers TEXT,
   service TEXT,
   product TEXT,
   observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),

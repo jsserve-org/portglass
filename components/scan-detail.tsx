@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const queryClient = new QueryClient();
@@ -38,6 +38,8 @@ type ScanRun = {
   ports: string;
   startedAt: string;
   finishedAt: string | null;
+  scannerPid: number | null;
+  notes: string | null;
 };
 
 type Summary = {
@@ -65,6 +67,8 @@ function isHttpPort(port: number) {
 
 function ScanDetailInner({ runId }: { runId: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
+  const [killing, setKilling] = useState(false);
+  const [killError, setKillError] = useState<string | null>(null);
 
   const scan = useQuery({
     queryKey: ["scan", runId],
@@ -117,6 +121,21 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const comp = summary.data?.computed;
   const ai = summary.data?.ai;
 
+  const forceKillScan = async () => {
+    if (!window.confirm("Force kill this port scan? Any partial findings already saved will remain.")) return;
+    setKilling(true);
+    setKillError(null);
+    try {
+      const res = await fetch(`/api/scan/${runId}/kill`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      await scan.refetch();
+    } catch (err) {
+      setKillError(err instanceof Error ? err.message : "Failed to force kill scan");
+    } finally {
+      setKilling(false);
+    }
+  };
+
   return (
     <div className="app">
       <nav className="topnav">
@@ -145,13 +164,20 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 Active
               </span>
             )}
+            {isActive && (
+              <button className="danger-action-btn" onClick={forceKillScan} disabled={killing}>
+                {killing ? "Killing…" : "Force kill port scanning"}
+              </button>
+            )}
           </div>
           <div className="scan-meta-bar">
             <span><Clock size={12} /> Started {new Date(run.startedAt).toLocaleString()}</span>
             {run.finishedAt && <span><Clock size={12} /> Finished {new Date(run.finishedAt).toLocaleString()}</span>}
             {comp?.duration && <span><Zap size={12} /> Duration {comp.duration}s</span>}
             <span><Server size={12} /> {run.ports.split(",").length} ports</span>
+            {run.scannerPid && <span>PID {run.scannerPid}</span>}
           </div>
+          {killError && <div className="modal-error scan-kill-error">{killError}</div>}
         </div>
 
         {comp && (

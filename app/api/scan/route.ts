@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { db } from '@/lib/db';
 import { scanRuns } from '@/lib/schema';
+import { eq } from 'drizzle-orm';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 
@@ -89,6 +90,13 @@ export async function POST(request: Request) {
 
   child.unref();
 
+  if (child.pid) {
+    await db
+      .update(scanRuns)
+      .set({ scannerPid: child.pid })
+      .where(eq(scanRuns.id, runId));
+  }
+
   // Minimal logging (keep only last 2KB to avoid memory growth)
   let stderr = '';
   child.stdout?.on('data', () => {});
@@ -101,6 +109,10 @@ export async function POST(request: Request) {
       console.error(`Scan run_id=${runId} exited with code ${code}`);
       console.error(stderr.slice(-2000));
     }
+    db.update(scanRuns)
+      .set({ finishedAt: new Date(), scannerPid: null })
+      .where(eq(scanRuns.id, runId))
+      .catch((err) => console.error(`Failed to finalize scan run_id=${runId}`, err));
   });
 
   return NextResponse.json({ runId, status: 'started' });

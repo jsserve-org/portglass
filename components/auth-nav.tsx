@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { LogOut, User } from "lucide-react";
+import { createAuthClient } from "better-auth/react";
+
+const authClient = createAuthClient({ baseURL: "" });
 
 type UserInfo = { id: string; name?: string; email?: string; image?: string };
 
@@ -18,11 +21,7 @@ export default function AuthNav() {
   }, []);
 
   const handleSignOut = async () => {
-    await fetch("/api/auth/sign-out", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-    });
+    await authClient.signOut();
     window.location.href = "/login";
   };
 

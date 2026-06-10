@@ -531,35 +531,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if proxy:
         print(f"Routing through SOCKS5 proxy {proxy[0]}:{proxy[1]}", file=sys.stderr)
 
-    alive_hosts: set[str] | None = None
-    if args.discover:
-        discover_ports = parse_ports(args.discover_ports)
-        alive_hosts = asyncio.run(discover_hosts(
-            args.cidr,
-            discover_ports,
-            concurrency=args.concurrency,
-            timeout=args.discover_timeout,
-            rate=args.rate,
-            threads=args.threads,
-            proxy=proxy,
-        ))
-        if not alive_hosts:
-            print("No alive hosts discovered. Exiting.", file=sys.stderr)
-            return 0
-
-    def target_iter() -> Iterator[tuple[str, int]]:
-        hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
-        for ip in hosts:
-            for port in ports:
-                yield ip, port
-
-    total = sum(1 for _ in target_iter())
-
     out = Path(args.output)
-    batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
-    stats = {"attempted": 0, "open": 0}
-    stats_lock = threading.Lock()
-    csv_lock = threading.Lock()
     db_lock = threading.Lock()
     db_conn = None
     run_id = None
@@ -588,59 +560,99 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ImportError:
             print("Postgres output requires psycopg. Install with: python3 -m pip install 'psycopg[binary]'", file=sys.stderr)
             return 2
-    stop_progress = threading.Event()
-    started = time.time()
 
-    file_cm = contextlib.nullcontext(None) if args.no_csv else out.open("w", newline="", encoding="utf-8")
-    with file_cm as f:
-        csv_writer = None if args.no_csv else csv.writer(f)
-        if csv_writer is not None:
-            csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner", "headers"])
-
-        progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
-        progress.start()
-
-        print(
-            f"Scanning {args.cidr} on {len(ports)} port(s): {total:,} TCP connect attempts. "
-            f"rate={args.rate}/s threads={args.threads} concurrency/thread={args.concurrency}",
-            file=sys.stderr,
-        )
-
-        workers = [
-            threading.Thread(target=worker, args=(i, batches, csv_writer, f, csv_lock, db_conn, db_lock, run_id, args, stats, stats_lock), daemon=True)
-            for i in range(args.threads)
-        ]
-        for t in workers:
-            t.start()
-
+    def mark_finished() -> None:
+        """Always record a finish time so the UI never shows a run as stuck 'Active'."""
+        if db_conn is None or run_id is None:
+            return
         try:
-            for batch in chunked(target_iter(), args.batch_size):
-                batches.put(batch)
-            for _ in workers:
-                batches.put(None)
-            batches.join()
-        except KeyboardInterrupt:
-            print("\nInterrupted; partial results saved.", file=sys.stderr)
-            return 130
-        finally:
-            stop_progress.set()
-            for _ in workers:
-                try:
-                    batches.put_nowait(None)
-                except queue.Full:
-                    pass
-            for t in workers:
-                t.join(timeout=1.0)
+            with db_conn.cursor() as cur:
+                cur.execute("UPDATE scan_runs SET finished_at = now() WHERE id = %s AND finished_at IS NULL", (run_id,))
+            db_conn.commit()
+        except Exception as exc:  # noqa: BLE001 - finishing must never raise
+            print(f"Failed to mark run_id={run_id} finished: {exc}", file=sys.stderr)
 
-    elapsed = time.time() - started
-    if db_conn is not None and run_id is not None:
-        with db_conn.cursor() as cur:
-            cur.execute("UPDATE scan_runs SET finished_at = now() WHERE id = %s", (run_id,))
-        db_conn.commit()
-        db_conn.close()
-    target = f"Postgres run_id={run_id}" if args.no_csv else str(out)
-    print(f"Done in {elapsed:.1f}s. Open ports: {stats['open']:,}. Results: {target}", file=sys.stderr)
-    return 0
+    try:
+        alive_hosts: set[str] | None = None
+        if args.discover:
+            discover_ports = parse_ports(args.discover_ports)
+            alive_hosts = asyncio.run(discover_hosts(
+                args.cidr,
+                discover_ports,
+                concurrency=args.concurrency,
+                timeout=args.discover_timeout,
+                rate=args.rate,
+                threads=args.threads,
+                proxy=proxy,
+            ))
+            if not alive_hosts:
+                print("No alive hosts discovered. Exiting.", file=sys.stderr)
+                return 0
+
+        def target_iter() -> Iterator[tuple[str, int]]:
+            hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
+            for ip in hosts:
+                for port in ports:
+                    yield ip, port
+
+        total = sum(1 for _ in target_iter())
+
+        batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
+        stats = {"attempted": 0, "open": 0}
+        stats_lock = threading.Lock()
+        csv_lock = threading.Lock()
+        stop_progress = threading.Event()
+        started = time.time()
+
+        file_cm = contextlib.nullcontext(None) if args.no_csv else out.open("w", newline="", encoding="utf-8")
+        with file_cm as f:
+            csv_writer = None if args.no_csv else csv.writer(f)
+            if csv_writer is not None:
+                csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner", "headers"])
+
+            progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
+            progress.start()
+
+            print(
+                f"Scanning {args.cidr} on {len(ports)} port(s): {total:,} TCP connect attempts. "
+                f"rate={args.rate}/s threads={args.threads} concurrency/thread={args.concurrency}",
+                file=sys.stderr,
+            )
+
+            workers = [
+                threading.Thread(target=worker, args=(i, batches, csv_writer, f, csv_lock, db_conn, db_lock, run_id, args, stats, stats_lock), daemon=True)
+                for i in range(args.threads)
+            ]
+            for t in workers:
+                t.start()
+
+            try:
+                for batch in chunked(target_iter(), args.batch_size):
+                    batches.put(batch)
+                for _ in workers:
+                    batches.put(None)
+                batches.join()
+            except KeyboardInterrupt:
+                print("\nInterrupted; partial results saved.", file=sys.stderr)
+                return 130
+            finally:
+                stop_progress.set()
+                for _ in workers:
+                    try:
+                        batches.put_nowait(None)
+                    except queue.Full:
+                        pass
+                for t in workers:
+                    t.join(timeout=1.0)
+
+        elapsed = time.time() - started
+        target = f"Postgres run_id={run_id}" if args.no_csv else str(out)
+        print(f"Done in {elapsed:.1f}s. Open ports: {stats['open']:,}. Results: {target}", file=sys.stderr)
+        return 0
+    finally:
+        mark_finished()
+        if db_conn is not None:
+            db_conn.close()
 
 
 if __name__ == "__main__":

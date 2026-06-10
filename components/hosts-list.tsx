@@ -23,8 +23,21 @@ type HostRow = {
   ip: string;
   port_count: number;
   last_seen: string;
+  country_iso: string | null;
+  country_name: string | null;
+  asn: number | null;
+  org: string | null;
   ports: { port: number; banner: string | null; headers: string | null; service: string | null }[];
 };
+
+function flagEmoji(iso: string | null): string {
+  if (!iso || iso.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(
+    A + iso.toUpperCase().charCodeAt(0) - 65,
+    A + iso.toUpperCase().charCodeAt(1) - 65,
+  );
+}
 
 const HTTP_PORTS = new Set([
   80, 81, 88, 443, 3000, 4444, 4567, 5000, 5001, 5050, 5100, 5222, 5443,
@@ -109,6 +122,8 @@ function HostsListInner() {
               <thead>
                 <tr>
                   <th>Host</th>
+                  <th>Location</th>
+                  <th>ASN</th>
                   <th>Open Ports</th>
                   <th>Last Seen</th>
                   <th>Services</th>
@@ -124,6 +139,12 @@ function HostsListInner() {
                           <Globe size={12} />
                           {h.ip}
                         </Link>
+                      </td>
+                      <td className="cell-ellipsis" title={h.country_name || ""}>
+                        {h.country_iso ? `${flagEmoji(h.country_iso)} ${h.country_iso}` : "—"}
+                      </td>
+                      <td className="cell-ellipsis" title={h.org || ""}>
+                        {h.asn ? `AS${h.asn}${h.org ? ` · ${h.org}` : ""}` : "—"}
                       </td>
                       <td>
                         <span className="port-badge">{h.port_count}</span>
@@ -144,7 +165,7 @@ function HostsListInner() {
                     </tr>
                     {expanded === h.ip && (
                       <tr className="expanded-row">
-                        <td colSpan={5}>
+                        <td colSpan={7}>
                           <div className="host-ports-grid">
                             {h.ports?.map((p) => (
                               <div key={p.port} className="host-port-chip">

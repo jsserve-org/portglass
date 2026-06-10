@@ -1,6 +1,15 @@
 import { ExternalLink, Terminal, Wifi } from 'lucide-react';
 import Link from 'next/link';
 
+function flagEmoji(iso: string | null): string {
+  if (!iso || iso.length !== 2) return '';
+  const A = 0x1f1e6;
+  return String.fromCodePoint(
+    A + iso.toUpperCase().charCodeAt(0) - 65,
+    A + iso.toUpperCase().charCodeAt(1) - 65,
+  );
+}
+
 export default function HostCard({
   f,
   idx,
@@ -14,6 +23,10 @@ export default function HostCard({
     service: string | null;
     product: string | null;
     observedAt: string;
+    countryIso?: string | null;
+    countryName?: string | null;
+    asn?: number | null;
+    org?: string | null;
   };
   idx: number;
 }) {
@@ -32,6 +45,14 @@ export default function HostCard({
               <span className="badge badge-cyan">PORT {f.port}</span>
               {f.service && <span className="badge badge-amber">{f.service.toUpperCase()}</span>}
               {f.product && <span className="badge badge-slate">{f.product}</span>}
+              {f.countryIso && (
+                <span className="badge badge-slate" title={f.countryName || ''}>
+                  {flagEmoji(f.countryIso)} {f.countryIso}
+                </span>
+              )}
+              {f.asn && (
+                <span className="badge badge-slate" title={f.org || ''}>AS{f.asn}</span>
+              )}
             </div>
           </div>
         </div>

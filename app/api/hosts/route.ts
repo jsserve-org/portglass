@@ -17,7 +17,11 @@ export async function GET() {
     SELECT
       ip,
       COUNT(DISTINCT port)::int as port_count,
-      MAX(observed_at) as last_seen
+      MAX(observed_at) as last_seen,
+      (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_iso,
+      (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_name,
+      (SELECT a.asn FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as asn,
+      (SELECT a.org FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as org
     FROM port_findings
     GROUP BY ip
     ORDER BY last_seen DESC
@@ -60,6 +64,10 @@ export async function GET() {
     ip: String(r.ip),
     port_count: Number(r.port_count),
     last_seen: String(r.last_seen),
+    country_iso: r.country_iso ? String(r.country_iso) : null,
+    country_name: r.country_name ? String(r.country_name) : null,
+    asn: r.asn != null ? Number(r.asn) : null,
+    org: r.org ? String(r.org) : null,
     ports: portsByIp[String(r.ip)] ?? [],
   }));
 

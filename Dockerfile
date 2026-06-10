@@ -13,6 +13,7 @@ RUN npm install --omit=dev --legacy-peer-deps
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY fast_scan.py ./fast_scan.py
+COPY import_maxmind.py ./import_maxmind.py
 COPY db ./db
 ENV NODE_ENV=production PORT=51111 PUBLIC_PORT=51111
 EXPOSE 51111

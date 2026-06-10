@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
 import { db } from '@/lib/db';
 import { scanRuns } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { launchScanner } from '@/lib/scanner';
 
 function validateCIDR(cidr: string): boolean {
   try {
@@ -88,39 +88,13 @@ export async function POST(request: Request) {
   }
   if (discover) args.push('--discover');
 
-  const child = spawn('python3', args, {
-    cwd: '/app',
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env,
-  });
+  // Persist the argv so an interrupted run can be resumed verbatim on boot.
+  await db
+    .update(scanRuns)
+    .set({ scanArgs: JSON.stringify(args) })
+    .where(eq(scanRuns.id, runId));
 
-  child.unref();
-
-  if (child.pid) {
-    await db
-      .update(scanRuns)
-      .set({ scannerPid: child.pid })
-      .where(eq(scanRuns.id, runId));
-  }
-
-  // Minimal logging (keep only last 2KB to avoid memory growth)
-  let stderr = '';
-  child.stdout?.on('data', () => {});
-  child.stderr?.on('data', (d: Buffer) => {
-    stderr += d.toString();
-    if (stderr.length > 4000) stderr = stderr.slice(-2000);
-  });
-  child.on('exit', (code) => {
-    if (code !== 0 && code !== null) {
-      console.error(`Scan run_id=${runId} exited with code ${code}`);
-      console.error(stderr.slice(-2000));
-    }
-    db.update(scanRuns)
-      .set({ finishedAt: new Date(), scannerPid: null })
-      .where(eq(scanRuns.id, runId))
-      .catch((err) => console.error(`Failed to finalize scan run_id=${runId}`, err));
-  });
+  launchScanner(runId, args, env);
 
   return NextResponse.json({ runId, status: 'started' });
 }

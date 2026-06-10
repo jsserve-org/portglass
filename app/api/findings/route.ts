@@ -39,7 +39,11 @@ export async function GET(request: Request) {
         headers,
         service,
         product,
-        observed_at AS "observedAt"
+        observed_at AS "observedAt",
+        (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryIso",
+        (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryName",
+        (SELECT a.asn FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "asn",
+        (SELECT a.org FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "org"
       FROM port_findings
       WHERE (${port}::int IS NULL OR port = ${port})
         AND (

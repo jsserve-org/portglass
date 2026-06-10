@@ -8,6 +8,9 @@ export const scanRuns = pgTable('scan_runs', {
   finishedAt: timestamp('finished_at', { withTimezone: true }),
   scannerVersion: text('scanner_version').notNull().default('fast_scan.py'),
   scannerPid: integer('scanner_pid'),
+  // JSON-encoded argv used to launch fast_scan.py, so an interrupted run can be
+  // replayed verbatim by the resume-on-boot reconciler.
+  scanArgs: text('scan_args'),
   notes: text('notes'),
 });
 

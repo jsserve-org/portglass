@@ -32,6 +32,22 @@ type Finding = {
   run: { id: number; cidr: string; startedAt: string } | null;
 };
 
+type Geo = {
+  countryIso: string | null;
+  countryName: string | null;
+  asn: number | null;
+  org: string | null;
+};
+
+function flagEmoji(iso: string | null): string {
+  if (!iso || iso.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(
+    A + iso.toUpperCase().charCodeAt(0) - 65,
+    A + iso.toUpperCase().charCodeAt(1) - 65,
+  );
+}
+
 const HTTP_PORTS = new Set([
   80, 81, 88, 443, 3000, 4444, 4567, 5000, 5001, 5050, 5100, 5222, 5443,
   5555, 5601, 5800, 5900, 5984, 6000, 6080, 6443, 7000, 7001, 7070, 7474,
@@ -52,12 +68,13 @@ function HostDetailInner({ ip }: { ip: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/host/${encodeURIComponent(ip)}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ ip: string; findings: Finding[] }>;
+      return res.json() as Promise<{ ip: string; geo?: Geo; findings: Finding[] }>;
     },
     refetchInterval: 10000,
   });
 
   const findings = data.data?.findings ?? [];
+  const geo = data.data?.geo;
 
   if (data.isLoading) {
     return (
@@ -95,6 +112,12 @@ function HostDetailInner({ ip }: { ip: string }) {
           <div className="scan-meta-bar">
             <span><Radio size={12} /> {findings.length} open port{findings.length === 1 ? "" : "s"}</span>
             <span><Clock size={12} /> Last seen {findings[0] ? new Date(findings[0].observedAt).toLocaleString() : "—"}</span>
+            {geo?.countryIso && (
+              <span><Globe size={12} /> {flagEmoji(geo.countryIso)} {geo.countryName || geo.countryIso}</span>
+            )}
+            {geo?.asn && (
+              <span><Server size={12} /> AS{geo.asn}{geo.org ? ` · ${geo.org}` : ""}</span>
+            )}
           </div>
         </div>
 

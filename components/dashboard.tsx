@@ -34,6 +34,10 @@ type Finding = {
   service: string | null;
   product: string | null;
   observedAt: string;
+  countryIso?: string | null;
+  countryName?: string | null;
+  asn?: number | null;
+  org?: string | null;
 };
 
 type Stats = {

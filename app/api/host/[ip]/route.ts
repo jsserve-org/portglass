@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { portFindings, scanRuns } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 
 export async function GET(_request: Request, { params }: { params: Promise<{ ip: string }> }) {
   if (authEnabled) {
@@ -32,8 +32,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
     for (const r of runs) runsMap.set(r.id, r);
   }
 
+  // MaxMind enrichment: country (location) + ASN/org for this IP.
+  const geoRows = await db.execute(sql`
+    SELECT
+      (SELECT country_iso FROM geo_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_iso,
+      (SELECT country_name FROM geo_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_name,
+      (SELECT asn FROM asn_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as asn,
+      (SELECT org FROM asn_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as org
+  `);
+  const g = (geoRows.rows[0] as any) ?? {};
+
   return NextResponse.json({
     ip,
+    geo: {
+      countryIso: g.country_iso ? String(g.country_iso) : null,
+      countryName: g.country_name ? String(g.country_name) : null,
+      asn: g.asn != null ? Number(g.asn) : null,
+      org: g.org ? String(g.org) : null,
+    },
     findings: findings.map((f) => ({
       ...f,
       run: f.runId ? runsMap.get(f.runId) || null : null,

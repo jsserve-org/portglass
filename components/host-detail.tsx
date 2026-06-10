@@ -9,7 +9,6 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Activity,
   Shield,
   Clock,
 } from "lucide-react";
@@ -80,7 +79,7 @@ function HostDetailInner({ ip }: { ip: string }) {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} />
+          <span className="spinner" />
           <p>Loading host details…</p>
         </div>
       </div>

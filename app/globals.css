@@ -180,24 +180,28 @@ html, body {
 
 /* Search Hero */
 .search-hero {
-  padding: 48px 32px 32px;
+  padding: 72px 32px 44px;
   text-align: center;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46vh;
 }
 
-.search-inner { max-width: 720px; margin: 0 auto; }
+.search-inner { max-width: 760px; margin: 0 auto; width: 100%; }
 
 .search-hero h1 {
-  font-size: 32px;
+  font-size: 42px;
   font-weight: 700;
-  margin-bottom: 8px;
-  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+  letter-spacing: -1px;
 }
 
 .search-sub {
   color: var(--text-muted);
-  font-size: 14px;
-  margin-bottom: 28px;
+  font-size: 15px;
+  margin-bottom: 34px;
 }
 
 .search-box {
@@ -206,45 +210,46 @@ html, body {
   gap: 0;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .search-box:focus-within {
   border-color: var(--accent-green);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12), 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .search-icon {
-  margin-left: 16px;
+  margin-left: 20px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
 .search-box input {
   flex: 1;
-  height: 50px;
+  height: 62px;
   background: transparent;
   border: none;
   outline: none;
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 14px;
-  padding: 0 12px;
+  font-size: 16px;
+  padding: 0 14px;
 }
 
 .search-box input::placeholder { color: var(--text-dim); }
 
 .search-btn {
-  height: 50px;
-  padding: 0 24px;
+  height: 62px;
+  padding: 0 30px;
   background: var(--accent-green);
   color: #000;
   border: none;
   font-family: var(--font-ui);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -1187,6 +1192,26 @@ html, body {
   gap: 16px;
   min-height: 60vh;
   color: var(--text-muted);
+}
+
+/* Loading spinner */
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--accent-green);
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+.spinner-sm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 
 .error-screen h2 {

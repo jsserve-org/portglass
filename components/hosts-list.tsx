@@ -6,7 +6,6 @@ import {
   Globe,
   Radio,
   Server,
-  Activity,
   Clock,
   Shield,
   Search,
@@ -73,7 +72,7 @@ function HostsListInner() {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} />
+          <span className="spinner" />
           <p>Loading hosts…</p>
         </div>
       </div>

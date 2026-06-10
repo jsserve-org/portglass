@@ -10,7 +10,6 @@ import {
   Radio,
   Server,
   Zap,
-  Activity,
   ExternalLink,
   ChevronDown,
   ChevronUp,
@@ -134,7 +133,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
     return (
       <div className="app">
         <div className="loading-screen">
-          <Activity size={32} />
+          <span className="spinner" />
           <p>Loading scan details…</p>
         </div>
       </div>

@@ -22,7 +22,9 @@ import ipaddress
 import contextlib
 import os
 import queue
+import re
 import socket
+import ssl
 import struct
 import sys
 import threading
@@ -75,6 +77,94 @@ def service_hint(port: int) -> str:
     return SERVICE_HINTS.get(port, "tcp")
 
 
+# Ports that speak TLS immediately on connect. The scanner performs a TLS
+# handshake on these so HTTPS/secure services yield real metadata (negotiated
+# TLS version, HTTP Server header) instead of a failed plaintext probe.
+TLS_PORTS = frozenset([
+    443, 465, 563, 636, 853, 989, 990, 993, 995, 1443, 2376, 4443, 4444,
+    5061, 5443, 6443, 6679, 6697, 7443, 8443, 9001, 9443, 10443, 12443,
+    8883, 9093, 15671, 8834, 9091,
+])
+
+# Of the TLS ports, these are HTTP-over-TLS (worth sending an HTTPS GET to).
+HTTPS_PORTS = frozenset([
+    443, 1443, 4443, 5443, 6443, 7443, 8443, 9443, 10443, 12443, 8834, 9091,
+])
+
+
+def _make_tls_context() -> ssl.SSLContext:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        ctx.set_alpn_protocols(["h2", "http/1.1"])
+    except (NotImplementedError, AttributeError):
+        pass
+    return ctx
+
+
+_TLS_CTX = _make_tls_context()
+
+
+# Banner/header patterns -> (service, product) extraction. Ordered; first hit wins.
+_SSH_RE = re.compile(r"^SSH-\d", re.I)
+_SERVER_RE = re.compile(r"(?im)^Server:\s*(.+?)\s*$")
+_XPOWERED_RE = re.compile(r"(?im)^X-Powered-By:\s*(.+?)\s*$")
+_SMTP_RE = re.compile(r"^220[\s-].*?(?:ESMTP|SMTP|Postfix|Exim|Sendmail|Microsoft)", re.I)
+_FTP_RE = re.compile(r"^220[\s-].*?(?:FTP|FileZilla|vsftpd|ProFTPD|Pure-FTPd)", re.I)
+_POP_RE = re.compile(r"^\+OK", re.I)
+_IMAP_RE = re.compile(r"^\* OK", re.I)
+_REDIS_RE = re.compile(r"^-(?:ERR|NOAUTH)|^\+PONG", re.I)
+_MYSQL_RE = re.compile(r"mysql|mariadb", re.I)
+
+
+def identify_service(port: int, banner: str, headers: str, tls_version: str = "") -> tuple[str, str]:
+    """Best-effort (service, product) from a banner / HTTP headers.
+
+    Falls back to the port-based hint for the service so the column is always
+    populated; product stays empty when nothing identifiable is found.
+    """
+    service = service_hint(port)
+    product = ""
+    banner = (banner or "").strip()
+    headers = headers or ""
+
+    is_http = headers[:5].upper().startswith("HTTP/")
+    if is_http:
+        service = "https" if tls_version else "http"
+        m = _SERVER_RE.search(headers)
+        if m:
+            product = m.group(1)[:128]
+        else:
+            mp = _XPOWERED_RE.search(headers)
+            if mp:
+                product = mp.group(1)[:128]
+    elif _SSH_RE.search(banner):
+        service = "ssh"
+        product = banner.split()[0][:128] if banner else ""
+    elif _SMTP_RE.search(banner):
+        service = "smtps" if tls_version else "smtp"
+        product = banner[:128]
+    elif _FTP_RE.search(banner):
+        service = "ftps" if tls_version else "ftp"
+        product = banner[:128]
+    elif _POP_RE.search(banner):
+        service = "pop3s" if tls_version else "pop3"
+        product = banner[:128]
+    elif _IMAP_RE.search(banner):
+        service = "imaps" if tls_version else "imap"
+        product = banner[:128]
+    elif _REDIS_RE.search(banner):
+        service = "redis"
+    elif _MYSQL_RE.search(banner):
+        service = "mysql"
+        product = banner[:128]
+    elif banner:
+        product = banner[:128]
+
+    return service, product
+
+
 def protocol_metadata(ip: str, port: int, latency_ms: float, probe: str, banner: str = "", http_headers: str = "") -> str:
     """Build a headers-style protocol block for every open TCP service.
 
@@ -105,6 +195,8 @@ class Finding:
     latency_ms: float
     banner: str = ""
     headers: str = ""
+    service: str = ""
+    product: str = ""
 
 
 class AsyncRateLimiter:
@@ -266,34 +358,53 @@ async def scan_once(
         latency_ms = (time.perf_counter() - started) * 1000.0
         banner_text = ""
         headers_text = ""
+        tls_version = ""
         probe_kind = "tcp-connect"
-        if banner or port in HTTP_PROBE_PORTS:
+
+        # Upgrade to TLS first on secure ports so HTTPS/secure services yield
+        # real data rather than a failed plaintext probe.
+        if port in TLS_PORTS:
             try:
-                if port in HTTP_PROBE_PORTS:
-                    probe_kind = "http-get"
-                    probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n"
-                    writer.write(probe.encode())
-                    await writer.drain()
-                    data = await asyncio.wait_for(reader.read(4096), timeout=min(timeout, 2.0))
-                    response = data.decode("utf-8", errors="replace")
-                    parts = response.split("\r\n\r\n", 1)
-                    if parts and parts[0].startswith("HTTP/"):
-                        headers_text = parts[0]
-                    else:
-                        parts2 = response.split("\n\n", 1)
-                        if parts2 and parts2[0].startswith("HTTP/"):
-                            headers_text = parts2[0]
-                        else:
-                            banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
-                else:
-                    probe_kind = "passive-banner"
-                    data = await asyncio.wait_for(reader.read(128), timeout=min(timeout, 1.0))
-                    banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+                await asyncio.wait_for(writer.start_tls(_TLS_CTX), timeout=min(timeout + 1.0, 4.0))
+                ssl_obj = writer.get_extra_info("ssl_object")
+                if ssl_obj is not None:
+                    tls_version = ssl_obj.version() or "TLS"
+                probe_kind = "tls-handshake"
             except Exception:
+                # Port is open at TCP level but not TLS (or handshake failed);
+                # keep it as an open finding without TLS enrichment.
                 pass
+
+        do_http = port in HTTPS_PORTS or (port in HTTP_PROBE_PORTS and not tls_version) or (tls_version and port in HTTP_PROBE_PORTS)
+        try:
+            if do_http:
+                probe_kind = "https-get" if tls_version else "http-get"
+                probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+                writer.write(probe.encode())
+                await writer.drain()
+                data = await asyncio.wait_for(reader.read(8192), timeout=min(timeout, 2.5))
+                response = data.decode("utf-8", errors="replace")
+                head = re.split(r"\r?\n\r?\n", response, maxsplit=1)[0]
+                if head.startswith("HTTP/"):
+                    headers_text = head
+                else:
+                    banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
+            elif banner or not tls_version:
+                probe_kind = "passive-banner" if not tls_version else "tls-banner"
+                data = await asyncio.wait_for(reader.read(512), timeout=min(timeout, 1.5))
+                banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+        except Exception:
+            pass
+
+        svc, product = identify_service(port, banner_text, headers_text, tls_version)
+        if tls_version:
+            banner_text = (f"[{tls_version}] " + banner_text).strip() if banner_text else f"[{tls_version}]"
         headers_text = protocol_metadata(ip, port, latency_ms, probe_kind, banner_text, headers_text)
-        return Finding(ip=ip, port=port, state="open", latency_ms=latency_ms, banner=banner_text, headers=headers_text)
-    except (asyncio.TimeoutError, OSError, ConnectionError):
+        return Finding(
+            ip=ip, port=port, state="open", latency_ms=latency_ms,
+            banner=banner_text, headers=headers_text, service=svc, product=product,
+        )
+    except (asyncio.TimeoutError, OSError, ConnectionError, ssl.SSLError):
         return None
     finally:
         if writer is not None:
@@ -321,10 +432,13 @@ async def verify_open(
         again = await scan_once(ip, port, timeout, limiter, banner, proxy)
         if again is None:
             return None
-        if not finding.banner and again.banner:
-            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, again.banner, finding.headers)
-        if again.headers and (not finding.headers or (again.headers.startswith("HTTP/") and not finding.headers.startswith("HTTP/"))):
-            finding = Finding(finding.ip, finding.port, finding.state, finding.latency_ms, finding.banner, again.headers)
+        # Keep whichever probe learned more about the service.
+        if (again.product and not finding.product) or (len(again.banner) > len(finding.banner)):
+            finding = Finding(
+                finding.ip, finding.port, finding.state, finding.latency_ms,
+                again.banner or finding.banner, again.headers or finding.headers,
+                again.service or finding.service, again.product or finding.product,
+            )
     return finding
 
 
@@ -396,7 +510,7 @@ def writerow_safe(csv_writer: csv.writer | None, csv_file, lock: threading.Lock,
     if csv_writer is None:
         return
     with lock:
-        csv_writer.writerow([finding.ip, finding.port, finding.state, f"{finding.latency_ms:.1f}", finding.banner, finding.headers])
+        csv_writer.writerow([finding.ip, finding.port, finding.state, f"{finding.latency_ms:.1f}", finding.banner, finding.headers, finding.service, finding.product])
         if csv_file is not None:
             csv_file.flush()
 
@@ -408,16 +522,18 @@ def db_insert_findings(db_conn, db_lock: threading.Lock, run_id: int | None, fin
         with db_conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner, headers)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner, headers, service, product)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id, ip, port) DO UPDATE SET
                   state = EXCLUDED.state,
                   latency_ms = EXCLUDED.latency_ms,
                   banner = EXCLUDED.banner,
                   headers = EXCLUDED.headers,
+                  service = EXCLUDED.service,
+                  product = EXCLUDED.product,
                   observed_at = now()
                 """,
-                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner, f.headers) for f in findings],
+                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner, f.headers, f.service or None, f.product or None) for f in findings],
             )
         db_conn.commit()
 
@@ -608,7 +724,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with file_cm as f:
             csv_writer = None if args.no_csv else csv.writer(f)
             if csv_writer is not None:
-                csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner", "headers"])
+                csv_writer.writerow(["ip", "port", "state", "latency_ms", "banner", "headers", "service", "product"])
 
             progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
             progress.start()

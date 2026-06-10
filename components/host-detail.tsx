@@ -11,11 +11,22 @@ import {
   ChevronUp,
   Shield,
   Clock,
+  MapPin,
+  Network,
+  Cpu,
+  Building2,
+  Layers,
+  Terminal,
 } from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import WorldMap from "./world-map";
+import { detectTech } from "@/lib/tech";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const queryClient = new QueryClient();
-import Link from "next/link";
-import { useState } from "react";
 
 type Finding = {
   id: number;
@@ -38,12 +49,12 @@ type Geo = {
   org: string | null;
 };
 
-function flagEmoji(iso: string | null): string {
+function flagEmoji(iso: string | null | undefined): string {
   if (!iso || iso.length !== 2) return "";
   const A = 0x1f1e6;
   return String.fromCodePoint(
     A + iso.toUpperCase().charCodeAt(0) - 65,
-    A + iso.toUpperCase().charCodeAt(1) - 65,
+    A + iso.toUpperCase().charCodeAt(1) - 65
   );
 }
 
@@ -52,12 +63,51 @@ const HTTP_PORTS = new Set([
   5555, 5601, 5800, 5900, 5984, 6000, 6080, 6443, 7000, 7001, 7070, 7474,
   7687, 8000, 8008, 8009, 8080, 8081, 8088, 8090, 8091, 8181, 8222, 8443,
   8501, 8834, 8880, 8883, 8888, 9000, 9001, 9042, 9043, 9090, 9091, 9092,
-  9200, 9443, 9600, 9981, 10000, 10443, 12443, 15672, 27017, 28015, 50000,
+  9200, 9443, 9600, 9981, 10000, 10443, 12443, 27017, 28015, 50000,
 ]);
 
 function isHttpPort(port: number) {
   return HTTP_PORTS.has(port);
 }
+
+function IntelRow({
+  icon,
+  label,
+  value,
+  mono,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3.5 border-b border-border px-3.5 py-2.5 last:border-b-0">
+      <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-[11px] uppercase tracking-wide text-muted-foreground [&_svg]:size-3 [&_svg]:text-[var(--text-dim)]">
+        {icon}
+        {label}
+      </span>
+      <span
+        className={cn(
+          "break-words text-right text-[13px] leading-snug text-foreground",
+          mono && "font-mono text-beam"
+        )}
+      >
+        {value ?? "—"}
+      </span>
+    </div>
+  );
+}
+
+const TECH_ACCENT: Record<string, string> = {
+  server: "border-l-2 border-l-signal",
+  lang: "border-l-2 border-l-amber",
+  framework: "border-l-2 border-l-beam",
+  cdn: "border-l-2 border-l-[#c084fc]",
+  os: "border-l-2 border-l-muted-foreground",
+  service: "border-l-2 border-l-destructive",
+  tls: "border-l-2 border-l-signal",
+};
 
 function HostDetailInner({ ip }: { ip: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
@@ -74,6 +124,18 @@ function HostDetailInner({ ip }: { ip: string }) {
 
   const findings = data.data?.findings ?? [];
   const geo = data.data?.geo;
+
+  const tech = useMemo(() => {
+    const sources = findings.flatMap((f) => [f.headers, f.banner]);
+    return detectTech(...sources);
+  }, [findings]);
+
+  const ports = useMemo(
+    () => [...new Set(findings.map((f) => f.port))].sort((a, b) => a - b),
+    [findings]
+  );
+
+  const location = geo?.countryName || geo?.countryIso || "Unknown";
 
   if (data.isLoading) {
     return (
@@ -103,26 +165,131 @@ function HostDetailInner({ ip }: { ip: string }) {
       </nav>
 
       <div className="scan-detail-page">
-        <div className="scan-detail-header">
-          <h1>
-            <Globe size={18} />
-            Host {ip}
+        {/* Header */}
+        <div className="mb-5 flex flex-col gap-1.5">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[2.5px] text-signal">
+            Host Intelligence
+          </span>
+          <h1 className="break-all font-mono text-[34px] font-semibold leading-none tracking-wide text-foreground">
+            {ip}
           </h1>
-          <div className="scan-meta-bar">
-            <span><Radio size={12} /> {findings.length} open port{findings.length === 1 ? "" : "s"}</span>
-            <span><Clock size={12} /> Last seen {findings[0] ? new Date(findings[0].observedAt).toLocaleString() : "—"}</span>
+          <div className="mt-1 flex flex-wrap gap-4 font-mono text-xs text-muted-foreground [&_svg]:size-3 [&_svg]:text-[var(--text-dim)]">
+            <span className="inline-flex items-center gap-1.5">
+              <Radio /> {ports.length} open port{ports.length === 1 ? "" : "s"}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Clock /> Last seen {findings[0] ? new Date(findings[0].observedAt).toLocaleString() : "—"}
+            </span>
             {geo?.countryIso && (
-              <span><Globe size={12} /> {flagEmoji(geo.countryIso)} {geo.countryName || geo.countryIso}</span>
-            )}
-            {geo?.asn && (
-              <span><Server size={12} /> AS{geo.asn}{geo.org ? ` · ${geo.org}` : ""}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Globe /> {flagEmoji(geo.countryIso)} {geo.countryName || geo.countryIso}
+              </span>
             )}
           </div>
         </div>
 
+        {/* Intel hero: map + panels */}
+        <div className="mb-4 grid gap-3.5 lg:grid-cols-[1.55fr_1fr]">
+          <Card className="overflow-hidden">
+            <CardHeader>
+              <CardTitle>
+                <MapPin /> Approximate Location
+              </CardTitle>
+              {geo?.countryIso && (
+                <Badge variant="beam">
+                  {flagEmoji(geo.countryIso)} {geo.countryIso}
+                </Badge>
+              )}
+            </CardHeader>
+            <WorldMap countryIso={geo?.countryIso ?? null} label={location} />
+          </Card>
+
+          <div className="flex flex-col gap-3.5">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <Building2 /> Network
+                </CardTitle>
+              </CardHeader>
+              <div>
+                <IntelRow
+                  icon={<Globe />}
+                  label="Location"
+                  value={geo?.countryIso ? `${flagEmoji(geo.countryIso)} ${location}` : location}
+                />
+                <IntelRow icon={<Network />} label="ASN" value={geo?.asn ? `AS${geo.asn}` : null} mono />
+                <IntelRow icon={<Layers />} label="Org" value={geo?.org} />
+                <IntelRow icon={<Server />} label="Open ports" value={ports.length} mono />
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <Cpu /> Technology
+                </CardTitle>
+                <Badge variant="slate">{tech.length}</Badge>
+              </CardHeader>
+              {tech.length ? (
+                <CardContent className="flex flex-wrap gap-2">
+                  {tech.map((t) => (
+                    <span
+                      key={t.name}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-sm border border-input bg-secondary px-2.5 py-1 font-mono text-[11px] font-medium text-foreground",
+                        TECH_ACCENT[t.kind]
+                      )}
+                    >
+                      {t.name}
+                      {t.version ? (
+                        <em className="text-[10px] not-italic text-muted-foreground">{t.version}</em>
+                      ) : null}
+                    </span>
+                  ))}
+                </CardContent>
+              ) : (
+                <CardContent className="text-xs text-[var(--text-dim)]">
+                  No fingerprints from banners or headers.
+                </CardContent>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        {/* Open ports strip */}
+        <Card className="mb-6 flex flex-wrap items-center gap-3.5 p-4">
+          <span className="inline-flex items-center gap-2 whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[1.4px] text-muted-foreground [&_svg]:size-3 [&_svg]:text-signal">
+            <Server /> Open Ports
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {ports.map((p) => {
+              const linkable = isHttpPort(p);
+              return (
+                <a
+                  key={p}
+                  href={linkable ? `http${p === 443 || p === 8443 ? "s" : ""}://${ip}:${p}` : undefined}
+                  target={linkable ? "_blank" : undefined}
+                  rel="noreferrer"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2.5 py-1 font-mono text-xs font-semibold text-foreground",
+                    linkable && "cursor-pointer text-beam hover:border-beam"
+                  )}
+                >
+                  {p}
+                  {linkable && <ExternalLink size={10} className="opacity-60" />}
+                </a>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Service detail table */}
         <div className="scan-findings-section">
           <h3>
-            <Server size={14} /> Port History
+            <Terminal size={14} /> Service Detail
+            <span className="findings-count">
+              {findings.length} record{findings.length === 1 ? "" : "s"}
+            </span>
           </h3>
 
           <div className="findings-table-wrap">

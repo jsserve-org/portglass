@@ -42,6 +42,22 @@ type ScanRun = {
   notes: string | null;
 };
 
+type Geo = {
+  countryIso: string | null;
+  countryName: string | null;
+  asn: number | null;
+  org: string | null;
+};
+
+function flagEmoji(iso: string | null | undefined): string {
+  if (!iso || iso.length !== 2) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(
+    A + iso.toUpperCase().charCodeAt(0) - 65,
+    A + iso.toUpperCase().charCodeAt(1) - 65,
+  );
+}
+
 type Summary = {
   computed: {
     hosts: number;
@@ -75,7 +91,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/scan/${runId}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ run: ScanRun; findings: Finding[]; stats: any }>;
+      return res.json() as Promise<{ run: ScanRun; geo?: Geo; findings: Finding[]; stats: any }>;
     },
     refetchInterval: 5000,
   });
@@ -90,6 +106,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
   });
 
   const run = scan.data?.run;
+  const geo = scan.data?.geo;
   const findings = scan.data?.findings ?? [];
   const stats = scan.data?.stats;
   const isActive = run && !run.finishedAt;
@@ -195,6 +212,12 @@ function ScanDetailInner({ runId }: { runId: string }) {
             {run.finishedAt && <span><Clock size={12} /> Finished {new Date(run.finishedAt).toLocaleString()}</span>}
             {comp?.duration && <span><Zap size={12} /> Duration {comp.duration}s</span>}
             <span><Server size={12} /> {run.ports.split(",").length} ports</span>
+            {geo?.countryIso && (
+              <span><Globe size={12} /> {flagEmoji(geo.countryIso)} {geo.countryName || geo.countryIso}</span>
+            )}
+            {geo?.asn && (
+              <span title={geo.org || ""}><Server size={12} /> AS{geo.asn}{geo.org ? ` · ${geo.org}` : ""}</span>
+            )}
             {run.scannerPid && <span>PID {run.scannerPid}</span>}
           </div>
           {killError && <div className="modal-error scan-kill-error">{killError}</div>}

@@ -118,7 +118,7 @@ function HostsListInner() {
 
         <div className="scan-findings-section">
           <div className="findings-table-wrap">
-            <table className="findings-table">
+            <table className="findings-table table-hosts">
               <thead>
                 <tr>
                   <th>Host</th>

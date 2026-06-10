@@ -1444,6 +1444,15 @@ html, body {
   .findings-table td:nth-child(4)::before { content: "Banner"; }
   .findings-table td:nth-child(5)::before { content: "Headers"; }
   .findings-table td:nth-child(6)::before { content: "Open"; }
+
+  /* The Hosts table has its own column set; override the shared labels. */
+  .findings-table.table-hosts td:nth-child(1)::before { content: "Host"; }
+  .findings-table.table-hosts td:nth-child(2)::before { content: "Location"; }
+  .findings-table.table-hosts td:nth-child(3)::before { content: "ASN"; }
+  .findings-table.table-hosts td:nth-child(4)::before { content: "Open Ports"; }
+  .findings-table.table-hosts td:nth-child(5)::before { content: "Last Seen"; }
+  .findings-table.table-hosts td:nth-child(6)::before { content: "Services"; }
+  .findings-table.table-hosts td:nth-child(7)::before { content: ""; }
   .findings-table .cell-ellipsis {
     max-width: none;
     overflow: hidden;

@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { scanRuns, portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 
 function ipCountFromCidr(cidr: string): number {
   try {
@@ -55,6 +55,29 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
+  // MaxMind enrichment for the scanned network: use a representative IP (first
+  // finding, else the CIDR base address) so the header can show country + ASN.
+  const lookupIp = findings[0]?.ip ?? runData.cidr.split('/')[0];
+  let geo = { countryIso: null as string | null, countryName: null as string | null, asn: null as number | null, org: null as string | null };
+  try {
+    const geoRows = await db.execute(sql`
+      SELECT
+        (SELECT country_iso FROM geo_blocks WHERE network >>= ${lookupIp}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_iso,
+        (SELECT country_name FROM geo_blocks WHERE network >>= ${lookupIp}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_name,
+        (SELECT asn FROM asn_blocks WHERE network >>= ${lookupIp}::inet ORDER BY masklen(network) DESC LIMIT 1) as asn,
+        (SELECT org FROM asn_blocks WHERE network >>= ${lookupIp}::inet ORDER BY masklen(network) DESC LIMIT 1) as org
+    `);
+    const g = (geoRows.rows[0] as any) ?? {};
+    geo = {
+      countryIso: g.country_iso ? String(g.country_iso) : null,
+      countryName: g.country_name ? String(g.country_name) : null,
+      asn: g.asn != null ? Number(g.asn) : null,
+      org: g.org ? String(g.org) : null,
+    };
+  } catch {
+    // geo tables may be empty/unavailable; header simply omits the badges
+  }
+
   const runData = run[0];
   const totalHosts = ipCountFromCidr(runData.cidr);
   const portsCount = runData.ports.split(',').length;
@@ -67,6 +90,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   return NextResponse.json({
     run: runData,
+    geo,
     findings,
     stats: {
       totalFindings: findings.length,

@@ -61,14 +61,20 @@ export async function GET() {
     const totalHosts = ipCountFromCidr(run.cidr);
     const portsCount = run.ports.split(',').length;
     const totalTargets = totalHosts * portsCount;
+    const estimatedTotalSec = totalTargets > 0 ? Math.round(totalTargets / 250) : 0;
+    const etaSec = !run.finishedAt && estimatedTotalSec > 0
+      ? Math.max(0, estimatedTotalSec - elapsedSec)
+      : 0;
     const progressPct = totalTargets > 0 && !run.finishedAt
-      ? Math.min(99, Math.round((elapsedSec / Math.max(elapsedSec, totalTargets / 250)) * 100))
+      ? Math.min(99, Math.round((elapsedSec / Math.max(elapsedSec, estimatedTotalSec)) * 100))
       : run.finishedAt ? 100 : 0;
 
     return {
       ...run,
       findingsCount,
       elapsedSec,
+      etaSec,
+      estimatedTotalSec,
       status,
       progressPct: run.finishedAt ? 100 : progressPct,
     };

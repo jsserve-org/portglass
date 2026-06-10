@@ -104,6 +104,14 @@ function ScanDetailInner({ runId }: { runId: string }) {
     const m = Math.floor((sec % 3600) / 60);
     return `${h}h ${m}m`;
   };
+  const fmtEta = (sec: number) => {
+    if (sec <= 0) return "finishing up";
+    if (sec < 60) return `~${sec}s`;
+    if (sec < 3600) return `~${Math.ceil(sec / 60)}m`;
+    const h = Math.floor(sec / 3600);
+    const m = Math.ceil((sec % 3600) / 60);
+    return `~${h}h ${m}m`;
+  };
 
   if (scan.isLoading) {
     return (
@@ -207,6 +215,9 @@ function ScanDetailInner({ runId }: { runId: string }) {
               <span><Clock size={12} /> Elapsed {fmtElapsed(elapsedSec)}</span>
               <span><Radio size={12} /> {findings.length} open finding{findings.length === 1 ? "" : "s"} so far</span>
               <span><Globe size={12} /> {stats?.hosts ?? 0} host{stats?.hosts === 1 ? "" : "s"} discovered</span>
+              {stats?.etaSec > 0 && (
+                <span style={{ color: "var(--accent-cyan)" }}><Zap size={12} /> ETA {fmtEta(stats.etaSec)} remaining</span>
+              )}
             </div>
           </div>
         )}

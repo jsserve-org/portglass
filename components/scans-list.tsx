@@ -34,6 +34,8 @@ type ScanRun = {
   notes: string | null;
   findingsCount: number;
   elapsedSec: number;
+  etaSec: number;
+  estimatedTotalSec: number;
   status: "active" | "completed" | "killed" | "failed";
   progressPct: number;
 };
@@ -44,6 +46,15 @@ function fmtDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return `${h}h ${m}m`;
+}
+
+function fmtEta(sec: number): string {
+  if (sec <= 0) return "finishing up";
+  if (sec < 60) return `~${sec}s`;
+  if (sec < 3600) return `~${Math.ceil(sec / 60)}m`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.ceil((sec % 3600) / 60);
+  return `~${h}h ${m}m`;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -174,6 +185,11 @@ function ScansListInner() {
                 {run.status === "active" && <ProgressBar pct={run.progressPct} />}
                 <div className="scan-card-footer">
                   <span><Server size={12} /> {run.findingsCount} open</span>
+                  {run.status === "active" && run.etaSec > 0 && (
+                    <span style={{ color: "var(--accent-cyan)", fontSize: 11, fontWeight: 600 }}>
+                      <Zap size={12} /> {fmtEta(run.etaSec)}
+                    </span>
+                  )}
                   <span><ChevronRight size={14} /></span>
                 </div>
               </div>

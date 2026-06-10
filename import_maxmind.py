@@ -26,7 +26,22 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
+
+
+class _StripAuthOnRedirect(HTTPRedirectHandler):
+    """MaxMind 302-redirects to a pre-signed URL that rejects a lingering
+    Authorization header with HTTP 400. Drop the header when following."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            new.headers.pop("Authorization", None)
+            new.unredirected_hdrs.pop("Authorization", None)
+        return new
+
+
+_opener = build_opener(_StripAuthOnRedirect)
 
 DOWNLOAD_BASE = "https://download.maxmind.com/geoip/databases"
 EDITIONS = {
@@ -43,7 +58,7 @@ def download_edition(edition: str, account_id: str, license_key: str, dest_dir: 
     token = base64.b64encode(f"{account_id}:{license_key}".encode()).decode()
     req = Request(url, headers={"Authorization": f"Basic {token}"})
     print(f"Downloading {EDITIONS[edition]} ...", file=sys.stderr)
-    with urlopen(req) as resp:  # noqa: S310 - fixed MaxMind host
+    with _opener.open(req) as resp:  # noqa: S310 - fixed MaxMind host
         data = resp.read()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         zf.extractall(dest_dir)

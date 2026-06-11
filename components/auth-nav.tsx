@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LogOut, User } from "lucide-react";
-import { createAuthClient } from "better-auth/react";
-
-const authClient = createAuthClient({ baseURL: "" });
+import { authClient } from "@/lib/auth-client";
 
 type UserInfo = { id: string; name?: string; email?: string; image?: string };
 

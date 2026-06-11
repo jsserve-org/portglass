@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { makeQueryClient } from "@/lib/query";
 import {
-  ArrowLeft,
   Activity,
-  Shield,
   MapPin,
   Clock,
   Radio,
@@ -20,6 +18,7 @@ import {
   AlertCircle,
   Server,
 } from "lucide-react";
+import TopNav from "./top-nav";
 import Link from "next/link";
 
 const queryClient = makeQueryClient();
@@ -122,17 +121,7 @@ function ScansListInner() {
 
   return (
     <div className="app">
-      <nav className="topnav">
-        <div className="nav-left">
-          <Link href="/" className="logo">
-            <Shield size={22} />
-            <span>portglass</span>
-          </Link>
-          <Link href="/" className="nav-link">Search</Link>
-          <Link href="/hosts" className="nav-link">Hosts</Link>
-          <Link href="/scans" className="nav-link active">Scans</Link>
-        </div>
-      </nav>
+      <TopNav active="/scans" />
 
       <div className="scan-detail-page">
         <div className="scan-detail-header">

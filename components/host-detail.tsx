@@ -3,14 +3,12 @@
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { makeQueryClient } from "@/lib/query";
 import {
-  ArrowLeft,
   Globe,
   Radio,
   Server,
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Shield,
   Clock,
   MapPin,
   Network,
@@ -19,6 +17,7 @@ import {
   Layers,
   Terminal,
 } from "lucide-react";
+import TopNav from "./top-nav";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import WorldMap from "./world-map";
@@ -165,19 +164,7 @@ function HostDetailInner({ ip }: { ip: string }) {
 
   return (
     <div className="app">
-      <nav className="topnav">
-        <div className="nav-left">
-          <Link href="/" className="logo">
-            <Shield size={22} />
-            <span>portglass</span>
-          </Link>
-          <Link href="/" className="nav-link">
-            <ArrowLeft size={14} /> Dashboard
-          </Link>
-          <Link href="/hosts" className="nav-link">Hosts</Link>
-          <Link href="/scans" className="nav-link">Scans</Link>
-        </div>
-      </nav>
+      <TopNav />
 
       <div className="scan-detail-page">
         {/* Header */}

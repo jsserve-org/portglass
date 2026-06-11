@@ -13,11 +13,11 @@ import {
   Radio,
   Search,
   Server,
-  Shield,
   Wifi,
   Zap,
   Trophy,
 } from 'lucide-react';
+import TopNav from "./top-nav";
 import HostCard from './host-card';
 import AuthNav from './auth-nav';
 import ScanModal from './scan-modal';
@@ -144,24 +144,18 @@ function DashboardInner() {
 
   return (
     <div className="app">
-      <nav className="topnav">
-        <div className="nav-left">
-          <a href="/" className="logo">
-            <Shield size={22} />
-            <span>portglass</span>
-          </a>
-          <a href="/" className="nav-link active">Search</a>
-          <a href="/hosts" className="nav-link">Hosts</a>
-          <a href="/scans" className="nav-link">Scans</a>
-        </div>
-        <div className="nav-right">
-          <button className="scan-btn" onClick={() => setShowScan(true)}>
-            <Plus size={14} /> New Scan
-          </button>
-          <StatusPill />
-          <AuthNav />
-        </div>
-      </nav>
+      <TopNav
+        active="/"
+        right={
+          <>
+            <button className="scan-btn" onClick={() => setShowScan(true)}>
+              <Plus size={14} /> New Scan
+            </button>
+            <StatusPill />
+            <AuthNav />
+          </>
+        }
+      />
 
       <header className="search-hero">
         <div className="search-inner">

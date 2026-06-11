@@ -16,8 +16,8 @@ import {
   ChevronUp,
   MapPin,
   Clock,
-  Shield,
-} from "lucide-react";
+  } from "lucide-react";
+import TopNav from "./top-nav";
 import Link from "next/link";
 
 type Finding = {
@@ -174,19 +174,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
 
   return (
     <div className="app">
-      <nav className="topnav">
-        <div className="nav-left">
-          <Link href="/" className="logo">
-            <Shield size={22} />
-            <span>portglass</span>
-          </Link>
-          <Link href="/" className="nav-link">
-            <ArrowLeft size={14} /> Dashboard
-          </Link>
-          <Link href="/hosts" className="nav-link">Hosts</Link>
-          <Link href="/scans" className="nav-link">Scans</Link>
-        </div>
-      </nav>
+      <TopNav />
 
       <div className="scan-detail-page">
         <div className="scan-detail-header">

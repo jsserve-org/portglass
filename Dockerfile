@@ -18,6 +18,8 @@ COPY server.js next.config.ts ./
 COPY fast_scan.py ./fast_scan.py
 COPY import_maxmind.py ./import_maxmind.py
 COPY db ./db
+# SQL migrations are applied at startup by server.js via drizzle-orm's migrator.
+COPY drizzle ./drizzle
 ENV NODE_ENV=production PORT=51111 PUBLIC_PORT=51111
 EXPOSE 51111
 ENTRYPOINT ["/sbin/tini", "--"]

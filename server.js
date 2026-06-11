@@ -7,6 +7,7 @@
 // route's auth + computed status/ETA) pushed over the socket every 2s, so the
 // browser stops polling. If anything WS-related fails the HTTP app is
 // unaffected and clients fall back to normal REST polling.
+const path = require('path');
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
@@ -18,7 +19,29 @@ const hostname = process.env.HOSTNAME || '0.0.0.0';
 const app = next({ dev: false, hostname, port });
 const handle = app.getRequestHandler();
 
-app.prepare().then(() => {
+// Apply pending Drizzle migrations before serving any traffic. Uses
+// drizzle-orm's migrator (a prod dependency) against the ./drizzle folder, so
+// the schema — including the better-auth tables — is always up to date on
+// boot and no manual DDL is ever needed. Fail fast if it can't run, since the
+// app is non-functional without its schema.
+async function runMigrations() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('> DATABASE_URL not set; skipping migrations');
+    return;
+  }
+  const { drizzle } = require('drizzle-orm/node-postgres');
+  const { migrate } = require('drizzle-orm/node-postgres/migrator');
+  const { Pool } = require('pg');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await migrate(drizzle(pool), { migrationsFolder: path.join(__dirname, 'drizzle') });
+    console.log('> Drizzle migrations up to date');
+  } finally {
+    await pool.end();
+  }
+}
+
+runMigrations().then(() => app.prepare()).then(() => {
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url, true));
   });

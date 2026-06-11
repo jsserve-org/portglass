@@ -48,3 +48,57 @@ CREATE TABLE IF NOT EXISTS asn_blocks (
   org TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_asn_blocks_network ON asn_blocks USING gist (network inet_ops);
+
+-- Better-auth tables. These MUST live here (not just db/schema.sql) because the
+-- Postgres container only mounts db/init.sql into docker-entrypoint-initdb.d.
+-- Without them, sign-in fails with a 500 ("Unable to create verification") when
+-- better-auth tries to INSERT OAuth state into the verification table.
+CREATE TABLE IF NOT EXISTS "user" (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  "emailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
+  image TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "session" (
+  id TEXT PRIMARY KEY,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "ipAddress" TEXT,
+  "userAgent" TEXT,
+  "userId" TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_user ON "session"("userId");
+
+CREATE TABLE IF NOT EXISTS "account" (
+  id TEXT PRIMARY KEY,
+  "accountId" TEXT NOT NULL,
+  "providerId" TEXT NOT NULL,
+  "userId" TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  "accessToken" TEXT,
+  "refreshToken" TEXT,
+  "idToken" TEXT,
+  "accessTokenExpiresAt" TIMESTAMPTZ,
+  "refreshTokenExpiresAt" TIMESTAMPTZ,
+  scope TEXT,
+  password TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_user ON "account"("userId");
+
+CREATE TABLE IF NOT EXISTS "verification" (
+  id TEXT PRIMARY KEY,
+  identifier TEXT NOT NULL,
+  value TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -137,7 +137,12 @@ function HostDetailInner({ ip }: { ip: string }) {
   const geo = data.data?.geo;
   const dnsData = dnsq.data;
   const reverseDns = dnsData?.reverse?.length ? dnsData.reverse.join(", ") : null;
-  const forwardDns = dnsData ? [...new Set(Object.values(dnsData.forward).flat())] : [];
+  const hasPtr = !!dnsData?.reverse?.length;
+  // A records the PTR hostname(s) resolve to. When forward-confirmed these are
+  // just this IP again (not worth showing); the interesting case is a mismatch,
+  // where the PTR points somewhere else (stale or spoofed reverse DNS).
+  const forwardAddrs = dnsData ? [...new Set(Object.values(dnsData.forward).flat())] : [];
+  const forwardMismatch = forwardAddrs.filter((a) => a !== ip);
 
   const tech = useMemo(() => {
     const sources = findings.flatMap((f) => [f.headers, f.banner]);
@@ -229,16 +234,20 @@ function HostDetailInner({ ip }: { ip: string }) {
                 />
                 <IntelRow
                   icon={<Globe />}
-                  label="Forward DNS"
+                  label="Forward-confirm"
                   value={
-                    forwardDns.length ? (
-                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                        {forwardDns.join(", ")}
-                        {dnsData?.fcrdns && <Badge variant="default">FCrDNS ✓</Badge>}
-                      </span>
-                    ) : dnsq.isLoading ? (
+                    dnsq.isLoading ? (
                       "resolving…"
-                    ) : null
+                    ) : !hasPtr ? null : dnsData?.fcrdns ? (
+                      <Badge variant="default">FCrDNS ✓</Badge>
+                    ) : forwardMismatch.length ? (
+                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        <Badge variant="amber">mismatch</Badge>
+                        {forwardMismatch.join(", ")}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">PTR didn&apos;t resolve</span>
+                    )
                   }
                   mono
                 />

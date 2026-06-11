@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { makeQueryClient } from "@/lib/query";
+import { useScansWs } from "@/lib/use-scans-ws";
 import {
   Activity,
   MapPin,
@@ -96,6 +97,7 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function ScansListInner() {
   const [q, setQ] = useState("");
+  const live = useScansWs(["scans"]);
 
   const scans = useQuery({
     queryKey: ["scans"],
@@ -104,7 +106,7 @@ function ScansListInner() {
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<ScanRun[]>;
     },
-    refetchInterval: 3000,
+    refetchInterval: live ? false : 5000,
   });
 
   const rows = (scans.data ?? []).filter((s) => {
@@ -138,6 +140,9 @@ function ScansListInner() {
             )}
           </div>
           <div className="scan-meta-bar">
+            <span style={{ color: live ? "var(--accent-cyan)" : "var(--text-dim)" }} title={live ? "Live via WebSocket" : "Polling (WebSocket unavailable)"}>
+              <Radio size={12} /> {live ? "Live" : "Polling"}
+            </span>
             <span><Radio size={12} /> {rows.length} total</span>
             <span><CheckCircle size={12} /> {rows.filter((s) => s.status === "completed").length} completed</span>
             <span><XCircle size={12} /> {rows.filter((s) => s.status === "killed").length} killed</span>

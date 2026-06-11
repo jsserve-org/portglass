@@ -10,8 +10,11 @@ WORKDIR /app
 RUN apk add --no-cache nodejs npm tini postgresql-client && pip install --no-cache-dir 'psycopg[binary]'
 COPY package*.json ./
 RUN npm install --omit=dev --legacy-peer-deps
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Custom server (server.js) hosts Next + the scan-status WebSocket, so we ship
+# the full .next build + prod node_modules rather than the standalone bundle.
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY server.js next.config.ts ./
 COPY fast_scan.py ./fast_scan.py
 COPY import_maxmind.py ./import_maxmind.py
 COPY db ./db

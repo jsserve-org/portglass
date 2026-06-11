@@ -3,6 +3,7 @@
 import React from 'react';
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { makeQueryClient } from '@/lib/query';
+import { useScansWs } from '@/lib/use-scans-ws';
 import {
   Activity,
   ChevronLeft,
@@ -99,6 +100,7 @@ function DashboardInner() {
   const [page, setPage] = React.useState(1);
   const [showScan, setShowScan] = React.useState(false);
   const pageSize = 25;
+  const live = useScansWs(['runs']);
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set('q', q);
@@ -119,7 +121,7 @@ function DashboardInner() {
   const runs = useQuery({
     queryKey: ['runs'],
     queryFn: () => api<ScanRun[]>('/api/runs'),
-    refetchInterval: 30000,
+    refetchInterval: live ? false : 30000,
   });
 
   const topHosts = useQuery({

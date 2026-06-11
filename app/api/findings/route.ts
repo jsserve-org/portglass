@@ -26,39 +26,47 @@ export async function GET(request: Request) {
   // The search view intentionally returns one card per IP address. If a host
   // has multiple matching open ports, keep the most recently observed finding
   // as the representative row; the host detail page shows the full port list.
+  // Page the distinct-IP rows first, then enrich only that page with geo/ASN.
+  // Previously the geo subqueries ran for every distinct IP in the table on
+  // each request (and on every poll), which got expensive as data grew.
   const rowsQuery = sql`
-    SELECT * FROM (
-      SELECT DISTINCT ON (ip)
-        id,
-        run_id AS "runId",
-        ip,
-        port,
-        state,
-        latency_ms AS "latencyMs",
-        banner,
-        headers,
-        service,
-        product,
-        observed_at AS "observedAt",
-        (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryIso",
-        (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryName",
-        (SELECT a.asn FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "asn",
-        (SELECT a.org FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "org"
-      FROM port_findings
-      WHERE (${port}::int IS NULL OR port = ${port})
-        AND (
-          ${needle}::text IS NULL
-          OR ip ILIKE ${needle}
-          OR COALESCE(banner, '') ILIKE ${needle}
-          OR COALESCE(headers, '') ILIKE ${needle}
-          OR COALESCE(service, '') ILIKE ${needle}
-          OR COALESCE(product, '') ILIKE ${needle}
-        )
-      ORDER BY ip, observed_at DESC
-    ) one_per_ip
-    ORDER BY "observedAt" DESC
-    LIMIT ${query.pageSize}
-    OFFSET ${offset}
+    SELECT
+      page.*,
+      (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= page.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryIso",
+      (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= page.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) AS "countryName",
+      (SELECT a.asn FROM asn_blocks a WHERE a.network >>= page.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "asn",
+      (SELECT a.org FROM asn_blocks a WHERE a.network >>= page.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) AS "org"
+    FROM (
+      SELECT * FROM (
+        SELECT DISTINCT ON (ip)
+          id,
+          run_id AS "runId",
+          ip,
+          port,
+          state,
+          latency_ms AS "latencyMs",
+          banner,
+          headers,
+          service,
+          product,
+          observed_at AS "observedAt"
+        FROM port_findings
+        WHERE (${port}::int IS NULL OR port = ${port})
+          AND (
+            ${needle}::text IS NULL
+            OR ip ILIKE ${needle}
+            OR COALESCE(banner, '') ILIKE ${needle}
+            OR COALESCE(headers, '') ILIKE ${needle}
+            OR COALESCE(service, '') ILIKE ${needle}
+            OR COALESCE(product, '') ILIKE ${needle}
+          )
+        ORDER BY ip, observed_at DESC
+      ) one_per_ip
+      ORDER BY "observedAt" DESC
+      LIMIT ${query.pageSize}
+      OFFSET ${offset}
+    ) page
+    ORDER BY page."observedAt" DESC
   `;
 
   const countQuery = sql`

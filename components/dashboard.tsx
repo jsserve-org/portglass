@@ -1,7 +1,8 @@
 "use client";
 
 import React from 'react';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { makeQueryClient } from '@/lib/query';
 import {
   Activity,
   ChevronLeft,
@@ -315,7 +316,7 @@ function DashboardInner() {
   );
 }
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 
 export default function Dashboard() {
   return (

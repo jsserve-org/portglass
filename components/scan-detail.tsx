@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/lib/query";
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 import {
   ArrowLeft,
   Globe,

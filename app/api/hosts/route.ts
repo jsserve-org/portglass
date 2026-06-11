@@ -13,19 +13,25 @@ export async function GET() {
     }
   }
 
+  // Group + limit first, then enrich only the returned hosts with geo/ASN so
+  // the inet GIST lookups run at most 500 times instead of once per distinct IP.
   const hostRows = await db.execute(sql`
     SELECT
-      ip,
-      COUNT(DISTINCT port)::int as port_count,
-      MAX(observed_at) as last_seen,
-      (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_iso,
-      (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= port_findings.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_name,
-      (SELECT a.asn FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as asn,
-      (SELECT a.org FROM asn_blocks a WHERE a.network >>= port_findings.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as org
-    FROM port_findings
-    GROUP BY ip
-    ORDER BY last_seen DESC
-    LIMIT 500
+      grouped.ip,
+      grouped.port_count,
+      grouped.last_seen,
+      (SELECT g.country_iso FROM geo_blocks g WHERE g.network >>= grouped.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_iso,
+      (SELECT g.country_name FROM geo_blocks g WHERE g.network >>= grouped.ip::inet ORDER BY masklen(g.network) DESC LIMIT 1) as country_name,
+      (SELECT a.asn FROM asn_blocks a WHERE a.network >>= grouped.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as asn,
+      (SELECT a.org FROM asn_blocks a WHERE a.network >>= grouped.ip::inet ORDER BY masklen(a.network) DESC LIMIT 1) as org
+    FROM (
+      SELECT ip, COUNT(DISTINCT port)::int as port_count, MAX(observed_at) as last_seen
+      FROM port_findings
+      GROUP BY ip
+      ORDER BY last_seen DESC
+      LIMIT 500
+    ) grouped
+    ORDER BY grouped.last_seen DESC
   `);
 
   const ips = (hostRows.rows as any[]).map((r) => String(r.ip));

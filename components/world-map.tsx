@@ -70,6 +70,10 @@ function buildDots(): { x: number; y: number }[] {
 
 const DOTS = buildDots();
 
+// Pre-rendered once at module load — the land grid never changes, so there's no
+// reason to rebuild ~1,500 <circle> elements on every component render.
+const DOT_NODES = DOTS.map((d, i) => <circle key={i} cx={d.x} cy={d.y} r="0.7" />);
+
 // Approximate country centroids [lat, lon] — used to place the marker when we
 // only have a country ISO code (MaxMind country-level geo, no city/lat-lon).
 const CENTROIDS: Record<string, [number, number]> = {
@@ -127,11 +131,7 @@ export default function WorldMap({
           ))}
         </g>
         {/* land dots */}
-        <g className="worldmap-dots">
-          {DOTS.map((d, i) => (
-            <circle key={i} cx={d.x} cy={d.y} r="0.7" />
-          ))}
-        </g>
+        <g className="worldmap-dots">{DOT_NODES}</g>
         {/* marker */}
         {hasPoint && (
           <g className="worldmap-marker" transform={`translate(${mx} ${my})`}>

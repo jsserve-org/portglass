@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/lib/query";
 import {
   ArrowLeft,
   Globe,
@@ -16,7 +17,7 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 
 type HostRow = {
   ip: string;

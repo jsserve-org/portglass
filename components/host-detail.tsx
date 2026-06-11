@@ -1,6 +1,7 @@
 "use client";
 
-import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/lib/query";
 import {
   ArrowLeft,
   Globe,
@@ -25,8 +26,9 @@ import { detectTech } from "@/lib/tech";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { HostDns } from "@/app/api/host/[ip]/dns/route";
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 
 type Finding = {
   id: number;
@@ -122,8 +124,21 @@ function HostDetailInner({ ip }: { ip: string }) {
     refetchInterval: 10000,
   });
 
+  const dnsq = useQuery({
+    queryKey: ["dns", ip],
+    queryFn: async () => {
+      const res = await fetch(`/api/host/${encodeURIComponent(ip)}/dns`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<HostDns>;
+    },
+    staleTime: 60 * 60 * 1000,
+  });
+
   const findings = data.data?.findings ?? [];
   const geo = data.data?.geo;
+  const dnsData = dnsq.data;
+  const reverseDns = dnsData?.reverse?.length ? dnsData.reverse.join(", ") : null;
+  const forwardDns = dnsData ? [...new Set(Object.values(dnsData.forward).flat())] : [];
 
   const tech = useMemo(() => {
     const sources = findings.flatMap((f) => [f.headers, f.banner]);
@@ -219,6 +234,27 @@ function HostDetailInner({ ip }: { ip: string }) {
                 />
                 <IntelRow icon={<Network />} label="ASN" value={geo?.asn ? `AS${geo.asn}` : null} mono />
                 <IntelRow icon={<Layers />} label="Org" value={geo?.org} />
+                <IntelRow
+                  icon={<Network />}
+                  label="Reverse DNS"
+                  value={dnsq.isLoading ? "resolving…" : reverseDns}
+                  mono
+                />
+                <IntelRow
+                  icon={<Globe />}
+                  label="Forward DNS"
+                  value={
+                    forwardDns.length ? (
+                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        {forwardDns.join(", ")}
+                        {dnsData?.fcrdns && <Badge variant="default">FCrDNS ✓</Badge>}
+                      </span>
+                    ) : dnsq.isLoading ? (
+                      "resolving…"
+                    ) : null
+                  }
+                  mono
+                />
                 <IntelRow icon={<Server />} label="Open ports" value={ports.length} mono />
               </div>
             </Card>

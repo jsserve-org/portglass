@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useQuery, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/lib/query";
 import {
   ArrowLeft,
   Activity,
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 
 type ScanRun = {
   id: number;

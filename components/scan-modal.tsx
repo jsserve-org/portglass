@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const PRESETS = [
   { label: "Common (21,22,23,53,80,443,554,8443,9000,9443,5000,5001,8080,3389,3306,5432...)", value: "common" },
@@ -10,6 +12,51 @@ const PRESETS = [
   { label: "All ports (1-65535)", value: "all" },
   { label: "Custom", value: "custom" },
 ];
+
+function OptionRow({
+  checked,
+  onChange,
+  icon,
+  title,
+  desc,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "flex w-full items-start gap-3 rounded-sm border p-3 text-left transition-colors",
+        checked ? "border-signal bg-signal/[0.07]" : "border-border bg-muted hover:border-input"
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[3px] border",
+          checked ? "border-signal bg-signal text-[#04140b]" : "border-input"
+        )}
+      >
+        {checked && (
+          <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth={4}>
+            <path d="M5 12l5 5L20 6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className={cn("flex items-center gap-1.5 text-[13px] font-semibold", checked ? "text-signal" : "text-foreground", "[&_svg]:size-3.5")}>
+          {icon}
+          {title}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{desc}</span>
+      </span>
+    </button>
+  );
+}
 
 export default function ScanModal({ onClose, onStarted }: { onClose: () => void; onStarted: () => void }) {
   const [cidr, setCidr] = useState("");
@@ -24,6 +71,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [error, setError] = useState("");
   const [proxy, setProxy] = useState("");
   const [discover, setDiscover] = useState(false);
+  const [stealth, setStealth] = useState(false);
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -53,6 +101,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
           rate,
           proxy: proxy.trim() || undefined,
           discover,
+          stealth,
         }),
       });
       const data = await res.json();
@@ -105,6 +154,23 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               />
             )}
 
+            <div className="flex flex-col gap-2">
+              <OptionRow
+                checked={stealth}
+                onChange={setStealth}
+                icon={<ShieldOff />}
+                title="Prevent detection mode"
+                desc="Low-and-slow: interleaves ports across hosts, randomises order, adds timing jitter and caps concurrency so IDS/firewall port-scan blockers stay dormant. Much slower."
+              />
+              <OptionRow
+                checked={discover}
+                onChange={setDiscover}
+                icon={<Crosshair />}
+                title="Discover alive hosts first"
+                desc="Fast pre-scan over common ports, then full scan only the responsive IPs. Faster on sparse ranges."
+              />
+            </div>
+
             <button type="button" className="modal-advanced-toggle" onClick={() => setAdvanced((v) => !v)}>
               {advanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               Advanced
@@ -130,6 +196,11 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                     <input className="modal-input-small" type="number" min={0} max={10000} value={rate} onChange={(e) => setRate(parseFloat(e.target.value))} />
                   </div>
                 </div>
+                {stealth && (
+                  <p className="mt-2 text-[11px] leading-snug text-amber">
+                    Prevent-detection mode overrides these for stealth: concurrency is capped at 64, rate at ~25/s, and retries are disabled.
+                  </p>
+                )}
                 <div style={{ marginTop: 10 }}>
                   <label className="modal-label-small">SOCKS5 Proxy (optional)</label>
                   <input
@@ -139,19 +210,15 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                     placeholder="host:port"
                   />
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={discover} onChange={(e) => setDiscover(e.target.checked)} />
-                  Discover alive hosts first (fast pre-scan, then full scan only responsive IPs)
-                </label>
               </div>
             )}
           </div>
           <div className="modal-footer">
-            <button type="button" className="modal-btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="modal-btn-primary" disabled={loading}>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={loading}>
               <Play size={14} />
               {loading ? "Starting…" : "Start Scan"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

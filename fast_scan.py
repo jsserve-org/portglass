@@ -22,6 +22,7 @@ import ipaddress
 import contextlib
 import os
 import queue
+import random
 import re
 import socket
 import ssl
@@ -187,6 +188,35 @@ def protocol_metadata(ip: str, port: int, latency_ms: float, probe: str, banner:
     return metadata
 
 
+# X.224 Connection Request carrying an RDP negotiation request asking for
+# TLS+CredSSP. RDP speaks no plaintext banner, so we must send this to learn
+# anything about port 3389.
+_RDP_NEG_REQUEST = bytes([
+    0x03, 0x00, 0x00, 0x13,              # TPKT header, total length 19
+    0x0e, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00,  # X.224 Connection Request
+    0x01, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00,  # RDP_NEG_REQ, protocols = SSL|HYBRID
+])
+
+_RDP_PROTOCOLS = {0: "standard-rdp", 1: "TLS", 2: "CredSSP/NLA", 8: "RDSTLS", 16: "CredSSP-with-EarlyUserAuth"}
+
+
+async def rdp_probe(reader, writer, read_timeout: float) -> str:
+    """Send an RDP X.224 negotiation request and summarise the response."""
+    writer.write(_RDP_NEG_REQUEST)
+    await writer.drain()
+    data = await asyncio.wait_for(reader.read(512), timeout=read_timeout)
+    if len(data) >= 2 and data[0] == 0x03 and data[1] == 0x00:
+        # TPKT + X.224 Connection Confirm; optional RDP negotiation response
+        # at offset 11: type(1) flags(1) length(2) selectedProtocol(4 LE).
+        if len(data) >= 19 and data[11] == 0x02:
+            proto = int.from_bytes(data[15:19], "little")
+            return f"RDP negotiation OK: {_RDP_PROTOCOLS.get(proto, f'0x{proto:x}')}"
+        if len(data) >= 12 and data[11] == 0x03:
+            return "RDP negotiation failure (server requires different security)"
+        return "RDP (X.224 connection confirm)"
+    return ""
+
+
 @dataclass(frozen=True)
 class Finding:
     ip: str
@@ -346,9 +376,16 @@ async def scan_once(
     limiter: AsyncRateLimiter,
     banner: bool,
     proxy: tuple[str, int] | None,
+    read_timeout: float = 3.0,
+    jitter: float = 0.0,
     on_attempt=None,
 ) -> Finding | None:
     await limiter.wait()
+    # Stealth jitter: randomise the moment of connect so probes don't form a
+    # regular train that scan-detection heuristics latch onto. Applied before
+    # timing so it doesn't inflate the measured latency.
+    if jitter > 0:
+        await asyncio.sleep(random.uniform(0, jitter))
     if on_attempt is not None:
         on_attempt()
     started = time.perf_counter()
@@ -382,16 +419,22 @@ async def scan_once(
                 probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\nConnection: close\r\n\r\n"
                 writer.write(probe.encode())
                 await writer.drain()
-                data = await asyncio.wait_for(reader.read(8192), timeout=min(timeout, 2.5))
+                # Read the response headers; servers (esp. over TLS) can take a
+                # while, so use the dedicated read window, not the connect
+                # timeout, which previously truncated HTTPS responses to ~0.8s.
+                data = await asyncio.wait_for(reader.read(8192), timeout=read_timeout)
                 response = data.decode("utf-8", errors="replace")
                 head = re.split(r"\r?\n\r?\n", response, maxsplit=1)[0]
                 if head.startswith("HTTP/"):
                     headers_text = head
                 else:
                     banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
+            elif port == 3389 and not tls_version:
+                probe_kind = "rdp-x224"
+                banner_text = await rdp_probe(reader, writer, read_timeout)
             elif banner or not tls_version:
                 probe_kind = "passive-banner" if not tls_version else "tls-banner"
-                data = await asyncio.wait_for(reader.read(512), timeout=min(timeout, 1.5))
+                data = await asyncio.wait_for(reader.read(512), timeout=read_timeout)
                 banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
         except Exception:
             pass
@@ -423,13 +466,15 @@ async def verify_open(
     retries: int,
     banner: bool,
     proxy: tuple[str, int] | None,
+    read_timeout: float = 3.0,
+    jitter: float = 0.0,
     on_attempt=None,
 ) -> Finding | None:
-    finding = await scan_once(ip, port, timeout, limiter, banner, proxy, on_attempt=on_attempt)
+    finding = await scan_once(ip, port, timeout, limiter, banner, proxy, read_timeout, jitter, on_attempt=on_attempt)
     if finding is None:
         return None
     for _ in range(max(0, retries)):
-        again = await scan_once(ip, port, timeout, limiter, banner, proxy)
+        again = await scan_once(ip, port, timeout, limiter, banner, proxy, read_timeout, jitter)
         if again is None:
             return None
         # Keep whichever probe learned more about the service.
@@ -451,6 +496,8 @@ async def scan_batch(
     verify_retries: int,
     banner: bool,
     proxy: tuple[str, int] | None,
+    read_timeout: float = 3.0,
+    jitter: float = 0.0,
     on_attempt=None,
 ) -> list[Finding]:
     limiter = AsyncRateLimiter(per_thread_rate)
@@ -459,7 +506,7 @@ async def scan_batch(
 
     async def runner(ip: str, port: int) -> None:
         async with sem:
-            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, proxy, on_attempt=on_attempt)
+            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, proxy, read_timeout, jitter, on_attempt=on_attempt)
             if finding is not None:
                 results.append(finding)
 
@@ -572,6 +619,8 @@ def worker(
                     verify_retries=args.verify_retries,
                     banner=args.banner,
                     proxy=proxy,
+                    read_timeout=args.read_timeout,
+                    jitter=args.jitter,
                     on_attempt=mark_attempt,
                 )
             )
@@ -611,6 +660,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rate", type=float, default=250.0, help="Global max connection attempts/second; lower to slow down (default: 250, 0=unlimited)")
     p.add_argument("--verify-retries", type=int, default=0, help="Re-check open ports N extra times to reduce false positives (slower)")
     p.add_argument("--banner", action="store_true", help="Try to read a small banner after connect (slower, may block until timeout)")
+    p.add_argument("--read-timeout", type=float, default=3.0, help="Seconds to wait for banner/HTTP/TLS response data (separate from connect timeout; default: 3.0)")
+    p.add_argument("--jitter", type=float, default=0.0, help="Max random delay (seconds) added before each probe to avoid regular-train detection (default: 0)")
+    p.add_argument(
+        "--stealth",
+        action="store_true",
+        help=(
+            "Prevent-detection mode: interleave ports across hosts and randomise order so a host is "
+            "never hit with a rapid sequential port sweep, add timing jitter, and cap concurrency. "
+            "Greatly reduces the chance of tripping IDS/firewall port-scan blockers. Much slower."
+        ),
+    )
     p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres connection URL; also reads DATABASE_URL")
     p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
     p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
@@ -631,6 +691,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.threads < 1 or args.concurrency < 1 or args.batch_size < 1:
         print("threads, concurrency, and batch-size must be positive", file=sys.stderr)
         return 2
+
+    if args.stealth:
+        # Low-and-slow profile: cap parallelism, add jitter, drop the
+        # double-probe verify bursts, and keep the rate gentle so a host is
+        # never hammered fast enough to trip a port-scan detector.
+        if args.jitter <= 0:
+            args.jitter = 0.4
+        args.concurrency = min(args.concurrency, 64)
+        args.verify_retries = 0
+        if args.rate <= 0 or args.rate > 40:
+            args.rate = 25
+        print(
+            f"Prevent-detection (stealth) mode: rate={args.rate}/s concurrency={args.concurrency} "
+            f"jitter<={args.jitter}s, interleaved/randomised target order.",
+            file=sys.stderr,
+        )
 
     try:
         import resource
@@ -706,10 +782,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
 
         def target_iter() -> Iterator[tuple[str, int]]:
-            hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
-            for ip in hosts:
-                for port in ports:
-                    yield ip, port
+            if args.stealth:
+                # Port-major + shuffled: a host's ports are spread the full width
+                # of the scan (len(hosts) probes apart) instead of being swept
+                # back-to-back, which is the pattern scan detectors key on.
+                hosts = list(alive_hosts) if alive_hosts is not None else [str(ip) for ip in net.hosts()]
+                plist = list(ports)
+                random.shuffle(hosts)
+                random.shuffle(plist)
+                for port in plist:
+                    for ip in hosts:
+                        yield ip, port
+            else:
+                hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
+                for ip in hosts:
+                    for port in ports:
+                        yield ip, port
 
         total = sum(1 for _ in target_iter())
 

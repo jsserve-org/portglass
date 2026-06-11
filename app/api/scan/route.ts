@@ -53,6 +53,8 @@ export async function POST(request: Request) {
   const banner = !!body.banner;
   const proxy = String(body.proxy ?? '').trim();
   const discover = !!body.discover;
+  const stealth = !!body.stealth;
+  const readTimeout = Math.min(Math.max(parseFloat(body.readTimeout ?? '3.0'), 0.5), 15);
 
   // Insert scan_runs record so we know the run_id immediately
   const [run] = await db
@@ -76,12 +78,14 @@ export async function POST(request: Request) {
     '--concurrency', String(concurrency),
     '--timeout', String(timeout),
     '--rate', String(rate),
+    '--read-timeout', String(readTimeout),
     '--yes-i-own-this-network',
     '--no-csv',
     '--run-id', String(runId),
   ];
   if (verifyRetries > 0) args.push('--verify-retries', String(verifyRetries));
   if (banner) args.push('--banner');
+  if (stealth) args.push('--stealth');
   if (proxy) {
     args.push('--proxy', proxy);
     env['SCAN_PROXY'] = proxy;

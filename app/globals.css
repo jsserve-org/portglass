@@ -121,29 +121,6 @@ body::before {
 
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px;
-  border-radius: 2px;
-  background: rgba(52, 224, 126, 0.08);
-  border: 1px solid rgba(52, 224, 126, 0.3);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  color: var(--signal);
-}
-
-.status-pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--signal);
-  box-shadow: 0 0 6px var(--signal);
-}
-
 /* ============ Auth UI ============ */
 .auth-btn {
   display: inline-flex;
@@ -1071,7 +1048,6 @@ body::before {
   .nav-link, .scan-btn, .auth-btn, .auth-logout { min-height: 40px; align-items: center; }
   .nav-link { display: inline-flex; padding: 8px 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.02); border-bottom-color: var(--border); }
   .nav-link.active { border-color: rgba(52, 224, 126, 0.45); background: rgba(52, 224, 126, 0.08); }
-  .status-pill { display: none; }
   .auth-user { max-width: 100%; flex: 1; min-width: 0; }
   .auth-name { max-width: 100%; }
   .scan-btn { padding: 8px 12px; }

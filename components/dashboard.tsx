@@ -85,15 +85,6 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
   );
 }
 
-function StatusPill() {
-  return (
-    <span className="status-pill">
-      <span className="dot" />
-      ONLINE
-    </span>
-  );
-}
-
 function DashboardInner() {
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
@@ -153,7 +144,6 @@ function DashboardInner() {
             <button className="scan-btn" onClick={() => setShowScan(true)}>
               <Plus size={14} /> New Scan
             </button>
-            <StatusPill />
             <AuthNav />
           </>
         }

@@ -159,8 +159,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 checked={stealth}
                 onChange={setStealth}
                 icon={<ShieldOff />}
-                title="Prevent detection mode"
-                desc="Low-and-slow: interleaves ports across hosts, randomises order, adds timing jitter and caps concurrency so IDS/firewall port-scan blockers stay dormant. Much slower."
+                title="Low-and-slow mode"
+                desc="Probes one connection at a time, interleaves ports across hosts, randomises order, adds jitter and holds the rate low to slip under simple port-scan thresholds. It's a full TCP connect scan, so it's not true IDS evasion — lower the rate further if you still get flagged. Much slower."
               />
               <OptionRow
                 checked={discover}
@@ -198,7 +198,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 </div>
                 {stealth && (
                   <p className="mt-2 text-[11px] leading-snug text-amber">
-                    Prevent-detection mode overrides these for stealth: concurrency is capped at 64, rate at ~25/s, and retries are disabled.
+                    Low-and-slow mode overrides these: concurrency is forced to 1, rate held at ~4/s, and retries are disabled.
                   </p>
                 )}
                 <div style={{ marginTop: 10 }}>

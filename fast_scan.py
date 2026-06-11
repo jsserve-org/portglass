@@ -666,9 +666,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--stealth",
         action="store_true",
         help=(
-            "Prevent-detection mode: interleave ports across hosts and randomise order so a host is "
-            "never hit with a rapid sequential port sweep, add timing jitter, and cap concurrency. "
-            "Greatly reduces the chance of tripping IDS/firewall port-scan blockers. Much slower."
+            "Low-and-slow mode: probe one connection at a time, interleave ports across hosts and "
+            "randomise order, add timing jitter, and hold the global probe rate low so a source stays "
+            "under simple port-scan thresholds. NOTE: this is a full TCP connect scan, so it is NOT "
+            "true evasion against stateful IDS/firewalls -- lower --rate further if you still get flagged. "
+            "Much slower."
         ),
     )
     p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres connection URL; also reads DATABASE_URL")
@@ -693,18 +695,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if args.stealth:
-        # Low-and-slow profile: cap parallelism, add jitter, drop the
-        # double-probe verify bursts, and keep the rate gentle so a host is
-        # never hammered fast enough to trip a port-scan detector.
+        # Low-and-slow profile. This is a full TCP *connect* scan, so it can't
+        # be truly stealthy against a stateful detector -- the goal here is just
+        # to stay under naive per-source fan-out thresholds. We do that by
+        # probing serially (one outstanding connection), holding the global rate
+        # low, adding jitter, and interleaving/randomising targets so no single
+        # host sees a fast sequential port sweep. Drop the verify double-probe so
+        # we don't send burst pairs. Users who still get flagged should lower
+        # --rate further (the dominant signal a source-based detector counts).
         if args.jitter <= 0:
-            args.jitter = 0.4
-        args.concurrency = min(args.concurrency, 64)
+            args.jitter = 0.75
+        args.concurrency = 1
         args.verify_retries = 0
-        if args.rate <= 0 or args.rate > 40:
-            args.rate = 25
+        if args.rate <= 0 or args.rate > 5:
+            args.rate = 4
         print(
-            f"Prevent-detection (stealth) mode: rate={args.rate}/s concurrency={args.concurrency} "
-            f"jitter<={args.jitter}s, interleaved/randomised target order.",
+            f"Low-and-slow mode: rate={args.rate}/s concurrency={args.concurrency} "
+            f"jitter<={args.jitter}s, interleaved/randomised target order. "
+            f"(full connect scan -- not true IDS evasion; lower --rate if still flagged)",
             file=sys.stderr,
         )
 

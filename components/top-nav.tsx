@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Shield } from "lucide-react";
+import AuthNav from "./auth-nav";
 
 const LINKS = [
   { href: "/", label: "Search" },
@@ -10,7 +11,9 @@ const LINKS = [
 /**
  * Shared top navigation used by every page. Pass `active` (the href of the
  * current section) to highlight it, and `right` for any page-specific actions
- * (e.g. the dashboard's New Scan button + auth controls).
+ * (e.g. the dashboard's New Scan button). The signed-in user account
+ * (`AuthNav`) is always rendered last on the right, so it appears
+ * consistently on every page.
  */
 export default function TopNav({
   active,
@@ -36,7 +39,10 @@ export default function TopNav({
           </Link>
         ))}
       </div>
-      {right && <div className="nav-right">{right}</div>}
+      <div className="nav-right">
+        {right}
+        <AuthNav />
+      </div>
     </nav>
   );
 }

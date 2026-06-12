@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import TopNav from "./top-nav";
 import HostCard from './host-card';
-import AuthNav from './auth-nav';
 import ScanModal from './scan-modal';
 import { Plus } from 'lucide-react';
 import Link from 'next/link';
@@ -140,12 +139,9 @@ function DashboardInner() {
       <TopNav
         active="/"
         right={
-          <>
-            <button className="scan-btn" onClick={() => setShowScan(true)}>
-              <Plus size={14} /> New Scan
-            </button>
-            <AuthNav />
-          </>
+          <button className="scan-btn" onClick={() => setShowScan(true)}>
+            <Plus size={14} /> New Scan
+          </button>
         }
       />
 

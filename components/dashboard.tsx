@@ -20,8 +20,6 @@ import {
 } from 'lucide-react';
 import TopNav from "./top-nav";
 import HostCard from './host-card';
-import ScanModal from './scan-modal';
-import { Plus } from 'lucide-react';
 import Link from 'next/link';
 
 type Finding = {
@@ -88,7 +86,6 @@ function DashboardInner() {
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
   const [page, setPage] = React.useState(1);
-  const [showScan, setShowScan] = React.useState(false);
   const pageSize = 25;
   const live = useScansWs(['runs']);
 
@@ -136,14 +133,7 @@ function DashboardInner() {
 
   return (
     <div className="app">
-      <TopNav
-        active="/"
-        right={
-          <button className="scan-btn" onClick={() => setShowScan(true)}>
-            <Plus size={14} /> New Scan
-          </button>
-        }
-      />
+      <TopNav />
 
       <header className="search-hero">
         <div className="search-inner">
@@ -182,8 +172,6 @@ function DashboardInner() {
         <StatChip label="Ports" value={stats.data?.ports} icon={<Server size={16} />} />
         <StatChip label="Runs" value={stats.data?.runs} icon={<Zap size={16} />} />
       </div>
-
-      {showScan && <ScanModal onClose={() => setShowScan(false)} onStarted={() => runs.refetch()} />}
 
       <main className="results">
         <aside className="filters">

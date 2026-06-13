@@ -21,6 +21,7 @@ import TopNav from "./top-nav";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import WorldMap from "./world-map";
+import CommandMenu from "./command-menu";
 import { detectTech } from "@/lib/tech";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -333,6 +334,7 @@ function HostDetailInner({ ip }: { ip: string }) {
                   <th>Latency</th>
                   <th>Banner</th>
                   <th>Headers</th>
+                  <th>Tools</th>
                   <th>Open</th>
                 </tr>
               </thead>
@@ -341,6 +343,16 @@ function HostDetailInner({ ip }: { ip: string }) {
                   <tr key={f.id}>
                     <td>
                       <span className="port-badge">{f.port}</span>
+                      {f.service && (
+                        <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-signal">
+                          {f.service}
+                        </span>
+                      )}
+                      {f.product && (
+                        <span className="mt-0.5 block max-w-[180px] truncate font-mono text-[10px] text-muted-foreground" title={f.product}>
+                          {f.product}
+                        </span>
+                      )}
                     </td>
                     <td>
                       {f.run ? (
@@ -370,6 +382,9 @@ function HostDetailInner({ ip }: { ip: string }) {
                       {expandedHeader === f.id && f.headers && (
                         <pre className="headers-block">{f.headers}</pre>
                       )}
+                    </td>
+                    <td>
+                      <CommandMenu ip={f.ip} port={f.port} service={f.service} />
                     </td>
                     <td>
                       {isHttpPort(f.port) && (

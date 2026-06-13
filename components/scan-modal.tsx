@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -62,16 +62,17 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [cidr, setCidr] = useState("");
   const [preset, setPreset] = useState("common");
   const [customPorts, setCustomPorts] = useState("");
-  const [threads, setThreads] = useState(2);
-  const [concurrency, setConcurrency] = useState(256);
+  const [threads, setThreads] = useState(4);
+  const [concurrency, setConcurrency] = useState(512);
   const [timeout, setTimeout] = useState(0.8);
-  const [rate, setRate] = useState(250);
+  const [rate, setRate] = useState(750);
   const [advanced, setAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [proxy, setProxy] = useState("");
   const [discover, setDiscover] = useState(false);
   const [stealth, setStealth] = useState(false);
+  const [deep, setDeep] = useState(false);
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -102,6 +103,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
           proxy: proxy.trim() || undefined,
           discover,
           stealth,
+          deep,
         }),
       });
       const data = await res.json();
@@ -155,6 +157,13 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
             )}
 
             <div className="flex flex-col gap-2">
+              <OptionRow
+                checked={deep}
+                onChange={setDeep}
+                icon={<Microscope />}
+                title="Deep service scan"
+                desc="Read banners on every open port (not just HTTP), probe non-standard HTTP servers, re-verify to merge the best fingerprint, and allow longer reads. Surfaces software, versions and OS (e.g. Apache 2.4 / Debian 12) for the Technology panel. Slower per host."
+              />
               <OptionRow
                 checked={stealth}
                 onChange={setStealth}

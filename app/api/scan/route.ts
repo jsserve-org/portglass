@@ -45,16 +45,23 @@ export async function POST(request: Request) {
   }
 
   const ports = String(body.ports ?? 'common').trim();
-  const threads = Math.min(Math.max(parseInt(body.threads ?? '2', 10), 1), 8);
-  const concurrency = Math.min(Math.max(parseInt(body.concurrency ?? '256', 10), 1), 2048);
+  const deep = !!body.deep;
+  // Throughput defaults are tuned for an authorized scan on a capable server:
+  // higher rate/concurrency/threads cut wall-clock time without touching the
+  // connect timeout or verification, so detection accuracy is unchanged.
+  const threads = Math.min(Math.max(parseInt(body.threads ?? '4', 10), 1), 8);
+  const concurrency = Math.min(Math.max(parseInt(body.concurrency ?? '512', 10), 1), 2048);
   const timeout = Math.min(Math.max(parseFloat(body.timeout ?? '0.8'), 0.1), 10);
-  const rate = Math.min(Math.max(parseFloat(body.rate ?? '250'), 0), 10000);
-  const verifyRetries = Math.min(Math.max(parseInt(body.verifyRetries ?? '0', 10), 0), 5);
-  const banner = !!body.banner;
+  const rate = Math.min(Math.max(parseFloat(body.rate ?? '750'), 0), 10000);
+  // Deep mode trades speed for richer fingerprints: read banners on every open
+  // port (not just HTTP), re-probe once to merge the best result, and allow a
+  // longer read window so slow services finish their greeting/response.
+  const verifyRetries = Math.min(Math.max(parseInt(body.verifyRetries ?? (deep ? '1' : '0'), 10), 0), 5);
+  const banner = !!body.banner || deep;
   const proxy = String(body.proxy ?? '').trim();
   const discover = !!body.discover;
   const stealth = !!body.stealth;
-  const readTimeout = Math.min(Math.max(parseFloat(body.readTimeout ?? '3.0'), 0.5), 15);
+  const readTimeout = Math.min(Math.max(parseFloat(body.readTimeout ?? (deep ? '5.0' : '3.0')), 0.5), 15);
 
   // Insert scan_runs record so we know the run_id immediately
   const [run] = await db

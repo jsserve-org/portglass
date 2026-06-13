@@ -412,30 +412,59 @@ async def scan_once(
                 # keep it as an open finding without TLS enrichment.
                 pass
 
-        do_http = port in HTTPS_PORTS or (port in HTTP_PROBE_PORTS and not tls_version) or (tls_version and port in HTTP_PROBE_PORTS)
+        known_http = (port in HTTPS_PORTS) or (port in HTTP_PROBE_PORTS)
+
+        async def http_get() -> bool:
+            """Send an HTTP GET and capture the response headers if the service
+            speaks HTTP. Returns True on an HTTP reply. Works over plaintext or
+            the already-upgraded TLS writer."""
+            nonlocal headers_text, banner_text, probe_kind
+            probe_kind = "https-get" if tls_version else "http-get"
+            probe = (
+                f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\n"
+                f"Accept: */*\r\nConnection: close\r\n\r\n"
+            )
+            writer.write(probe.encode())
+            await writer.drain()
+            # Servers (esp. over TLS) can take a while, so use the dedicated read
+            # window, not the connect timeout, which previously truncated HTTPS
+            # responses to ~0.8s.
+            data = await asyncio.wait_for(reader.read(8192), timeout=read_timeout)
+            response = data.decode("utf-8", errors="replace")
+            head = re.split(r"\r?\n\r?\n", response, maxsplit=1)[0]
+            if head.startswith("HTTP/"):
+                headers_text = head
+                return True
+            if response.strip() and not banner_text:
+                banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
+            return False
+
         try:
-            if do_http:
-                probe_kind = "https-get" if tls_version else "http-get"
-                probe = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*\r\nConnection: close\r\n\r\n"
-                writer.write(probe.encode())
-                await writer.drain()
-                # Read the response headers; servers (esp. over TLS) can take a
-                # while, so use the dedicated read window, not the connect
-                # timeout, which previously truncated HTTPS responses to ~0.8s.
-                data = await asyncio.wait_for(reader.read(8192), timeout=read_timeout)
-                response = data.decode("utf-8", errors="replace")
-                head = re.split(r"\r?\n\r?\n", response, maxsplit=1)[0]
-                if head.startswith("HTTP/"):
-                    headers_text = head
-                else:
-                    banner_text = response.replace("\r", " ").replace("\n", " ").strip()[:512]
-            elif port == 3389 and not tls_version:
+            if port == 3389 and not tls_version:
                 probe_kind = "rdp-x224"
                 banner_text = await rdp_probe(reader, writer, read_timeout)
-            elif banner or not tls_version:
+            elif known_http:
+                await http_get()
+            else:
+                # Read any greeting the service volunteers on connect. Keep the
+                # window short: protocols that banner (SSH/SMTP/FTP/…) do so
+                # immediately, while HTTP servers stay silent until they get a
+                # request -- so a silent port is our cue to try HTTP next (and a
+                # short timeout also avoids a 3s stall on every quiet open port).
                 probe_kind = "passive-banner" if not tls_version else "tls-banner"
-                data = await asyncio.wait_for(reader.read(512), timeout=read_timeout)
-                banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+                try:
+                    data = await asyncio.wait_for(reader.read(512), timeout=min(read_timeout, 1.5))
+                    banner_text = data.decode("utf-8", errors="replace").replace("\r", " ").replace("\n", " ").strip()
+                except asyncio.TimeoutError:
+                    banner_text = ""
+                # A silent open port on an unrecognised service is very often an
+                # HTTP(S) server on a non-standard port. Probe it so the UI shows
+                # real headers/tech instead of a blank "tcp" finding.
+                if not banner_text and not headers_text:
+                    try:
+                        await http_get()
+                    except Exception:
+                        pass
         except Exception:
             pass
 

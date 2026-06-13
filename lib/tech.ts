@@ -55,11 +55,19 @@ const RULES: Rule[] = [
   { kind: 'service', re: /grafana/i, name: 'Grafana' },
   { kind: 'service', re: /prometheus/i, name: 'Prometheus' },
   { kind: 'service', re: /jenkins/i, name: 'Jenkins' },
+  // OpenSSH packages encode the distro release in their banner, e.g.
+  // "OpenSSH_9.2p1 Debian-2+deb12u2" -> Debian 12, or "...Ubuntu-3ubuntu0.6".
+  // These specific rules run before the generic name-only ones so the version
+  // wins (detectTech keeps the first match per name).
+  { kind: 'os', re: /deb(\d+)u\d/i, name: 'Debian', version: 1 },
+  { kind: 'os', re: /[ -]el(\d)[._]/i, name: 'RHEL', version: 1 },
   { kind: 'os', re: /ubuntu/i, name: 'Ubuntu' },
   { kind: 'os', re: /debian/i, name: 'Debian' },
+  { kind: 'os', re: /alpine/i, name: 'Alpine' },
   { kind: 'os', re: /centos/i, name: 'CentOS' },
-  { kind: 'os', re: /\(win(32|64|dows)\)/i, name: 'Windows' },
-  { kind: 'os', re: /red ?hat/i, name: 'Red Hat' },
+  { kind: 'os', re: /fedora/i, name: 'Fedora' },
+  { kind: 'os', re: /\(win(32|64|dows)\)|microsoft-iis/i, name: 'Windows' },
+  { kind: 'os', re: /red ?hat|rhel/i, name: 'Red Hat' },
 ];
 
 export function detectTech(...sources: (string | null | undefined)[]): Tech[] {

@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import { db } from '@/lib/db';
 import { scanRuns } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
@@ -7,6 +8,11 @@ import { eq } from 'drizzle-orm';
 // production image (/app); in local dev it sits at the project root.
 const SCAN_CWD = process.env.SCAN_CWD ?? (process.env.NODE_ENV === 'production' ? '/app' : process.cwd());
 
+// Run the scanner at a low CPU priority so a scan can never starve the rest of
+// the (small, shared) host of CPU. Detected once; falls back to a plain spawn
+// where `nice` isn't present.
+const NICE_BIN = ['/usr/bin/nice', '/bin/nice'].find((p) => existsSync(p));
+
 /**
  * Spawn fast_scan.py as a detached child and wire up bookkeeping: record the
  * pid, keep a small tail of stderr for diagnostics, and finalize finished_at on
@@ -14,7 +20,10 @@ const SCAN_CWD = process.env.SCAN_CWD ?? (process.env.NODE_ENV === 'production' 
  * behave identically.
  */
 export function launchScanner(runId: number, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn('python3', args, {
+  const [cmd, cmdArgs] = NICE_BIN
+    ? [NICE_BIN, ['-n', '15', 'python3', ...args]]
+    : ['python3', args];
+  const child = spawn(cmd, cmdArgs, {
     cwd: SCAN_CWD,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],

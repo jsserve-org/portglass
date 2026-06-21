@@ -16,12 +16,17 @@ import {
   Building2,
   Layers,
   Terminal,
+  Braces,
+  Download,
 } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import WorldMap from "./world-map";
 import CommandMenu from "./command-menu";
+import CopyButton from "./copy-button";
+import { curlFor, looksHttp } from "@/lib/commands";
+import { downloadText, toCsv } from "@/lib/export";
 import { detectTech } from "@/lib/tech";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +118,7 @@ const TECH_ACCENT: Record<string, string> = {
 
 function HostDetailInner({ ip }: { ip: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
 
   const data = useQuery({
     queryKey: ["host", ip],
@@ -155,6 +161,39 @@ function HostDetailInner({ ip }: { ip: string }) {
     [findings]
   );
 
+  // curl commands for every HTTP(S) port on this host, for one-click copy.
+  const hostCurlSet = useMemo(
+    () =>
+      findings
+        .filter((f) => looksHttp(f.port, f.service))
+        .map((f) => curlFor(f.ip, f.port, f.service))
+        .join("\n"),
+    [findings]
+  );
+
+  const rawJson = useMemo(
+    () => JSON.stringify({ ip, geo, dns: dnsData ?? null, findings }, null, 2),
+    [ip, geo, dnsData, findings]
+  );
+
+  const exportJson = () => downloadText(`${ip}.json`, rawJson, "application/json");
+  const exportCsv = () =>
+    downloadText(
+      `${ip}.csv`,
+      toCsv(
+        findings.map((f) => ({
+          ip: f.ip,
+          port: f.port,
+          service: f.service ?? "",
+          product: f.product ?? "",
+          latency_ms: f.latencyMs ?? "",
+          banner: f.banner ?? "",
+          observed_at: f.observedAt,
+        }))
+      ),
+      "text/csv"
+    );
+
   const location = geo?.countryName || geo?.countryIso || "Unknown";
 
   if (data.isLoading) {
@@ -195,6 +234,59 @@ function HostDetailInner({ ip }: { ip: string }) {
             )}
           </div>
         </div>
+
+        {/* Action bar: copy/export/raw */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <CopyButton text={ip} label="Copy IP" title="Copy this IP" />
+          {hostCurlSet && (
+            <CopyButton
+              text={hostCurlSet}
+              label="Copy curl set"
+              title="Copy a curl command for every open HTTP port on this host"
+            />
+          )}
+          <button
+            type="button"
+            onClick={exportJson}
+            title="Download this host's data as JSON"
+            className="inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-beam hover:text-beam"
+          >
+            <Download size={12} /> JSON
+          </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            title="Download this host's open ports as CSV"
+            className="inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-beam hover:text-beam"
+          >
+            <Download size={12} /> CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRaw((v) => !v)}
+            title="Toggle the raw JSON view"
+            className={cn(
+              "inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-beam hover:text-beam",
+              showRaw && "border-beam text-beam"
+            )}
+          >
+            <Braces size={12} /> Raw
+          </button>
+        </div>
+
+        {showRaw && (
+          <div className="mb-4 overflow-hidden rounded-md border border-border bg-muted">
+            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+              <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                Raw JSON
+              </span>
+              <CopyButton text={rawJson} label="Copy" title="Copy the raw JSON" />
+            </div>
+            <pre className="max-h-[420px] overflow-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed text-foreground">
+              {rawJson}
+            </pre>
+          </div>
+        )}
 
         {/* Intel hero: map + panels */}
         <div className="mb-4 grid gap-3.5 lg:grid-cols-[1.55fr_1fr]">
@@ -368,7 +460,7 @@ function HostDetailInner({ ip }: { ip: string }) {
                       {f.banner || "—"}
                     </td>
                     <td>
-                      {f.headers ? (
+                      {f.headers || f.banner ? (
                         <button
                           className="header-toggle"
                           onClick={() => setExpandedHeader(expandedHeader === f.id ? null : f.id)}
@@ -379,8 +471,35 @@ function HostDetailInner({ ip }: { ip: string }) {
                       ) : (
                         "—"
                       )}
-                      {expandedHeader === f.id && f.headers && (
-                        <pre className="headers-block">{f.headers}</pre>
+                      {expandedHeader === f.id && (f.headers || f.banner) && (
+                        <div className="mt-1.5 overflow-hidden rounded-sm border border-border bg-muted">
+                          <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
+                            <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {f.ip}:{f.port} · {f.service || "tcp"}
+                            </span>
+                            <CopyButton
+                              text={[f.banner, f.headers].filter(Boolean).join("\n\n")}
+                              label="Copy"
+                              title="Copy raw banner + headers"
+                            />
+                          </div>
+                          {f.banner && (
+                            <>
+                              <div className="px-2.5 pt-2 font-mono text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
+                                Banner
+                              </div>
+                              <pre className="headers-block">{f.banner}</pre>
+                            </>
+                          )}
+                          {f.headers && (
+                            <>
+                              <div className="px-2.5 pt-2 font-mono text-[10px] uppercase tracking-wide text-[var(--text-dim)]">
+                                Headers / Protocol
+                              </div>
+                              <pre className="headers-block">{f.headers}</pre>
+                            </>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td>

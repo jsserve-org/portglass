@@ -532,14 +532,21 @@ async def scan_batch(
     limiter = AsyncRateLimiter(per_thread_rate)
     sem = asyncio.Semaphore(concurrency)
     results: list[Finding] = []
+    results_lock = asyncio.Lock()
 
     async def runner(ip: str, port: int) -> None:
         async with sem:
             finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, proxy, read_timeout, jitter, on_attempt=on_attempt)
             if finding is not None:
-                results.append(finding)
+                async with results_lock:
+                    results.append(finding)
 
-    await asyncio.gather(*(runner(ip, port) for ip, port in batch))
+    # Process in chunks to limit memory usage and avoid creating
+    # all coroutines at once.
+    chunk_size = min(concurrency * 4, 4096)
+    for i in range(0, len(batch), chunk_size):
+        chunk = batch[i:i + chunk_size]
+        await asyncio.gather(*(runner(ip, port) for ip, port in chunk))
     return results
 
 
@@ -565,19 +572,29 @@ async def discover_hosts(
     sem = asyncio.Semaphore(concurrency)
     alive: set[str] = set()
     attempted = 0
+    alive_lock = asyncio.Lock()
+    attempted_lock = asyncio.Lock()
 
     async def probe(ip: str, port: int) -> None:
         nonlocal attempted
         async with sem:
             await limiter.wait()
-            attempted += 1
+            async with attempted_lock:
+                attempted += 1
             try:
                 await _open_connection(ip, port, timeout, proxy)
-                alive.add(ip)
+                async with alive_lock:
+                    alive.add(ip)
             except Exception:
                 pass
 
-    await asyncio.gather(*(probe(ip, port) for ip in hosts for port in ports))
+    # Process in chunks to avoid creating millions of coroutines at once.
+    chunk_size = min(concurrency * 4, 4096)
+    targets = [(ip, port) for ip in hosts for port in ports]
+    for i in range(0, len(targets), chunk_size):
+        chunk = targets[i:i + chunk_size]
+        await asyncio.gather(*(probe(ip, port) for ip, port in chunk))
+
     print(f"Discovery found {len(alive):,} alive host(s) out of {len(hosts):,}", file=sys.stderr)
     return alive
 
@@ -684,7 +701,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", "--ports", default="common", help="Ports: common, top100, 80,443, or 1-1024 (default: common)")
     p.add_argument("-o", "--output", default="scan-results.csv", help="CSV output path")
     p.add_argument("--threads", type=int, default=4, help="OS scanner threads (default: 4)")
-    p.add_argument("--concurrency", type=int, default=512, help="Concurrent sockets per thread (default: 512)")
+    p.add_argument("--concurrency", type=int, default=128, help="Concurrent sockets per thread (default: 128)")
     p.add_argument("--timeout", type=float, default=0.8, help="TCP connect timeout seconds; increase for accuracy (default: 0.8)")
     p.add_argument("--rate", type=float, default=250.0, help="Global max connection attempts/second; lower to slow down (default: 250, 0=unlimited)")
     p.add_argument("--verify-retries", type=int, default=0, help="Re-check open ports N extra times to reduce false positives (slower)")
@@ -700,6 +717,15 @@ def build_parser() -> argparse.ArgumentParser:
             "under simple port-scan thresholds. NOTE: this is a full TCP connect scan, so it is NOT "
             "true evasion against stateful IDS/firewalls -- lower --rate further if you still get flagged. "
             "Much slower."
+        ),
+    )
+    p.add_argument(
+        "--fast",
+        action="store_true",
+        help=(
+            "Fast mode: crank concurrency and global rate, shorten the connect timeout, and skip "
+            "banner/verify reads for a quick port sweep. Trades fingerprint detail and slow-host "
+            "accuracy for speed. Mutually exclusive with --stealth."
         ),
     )
     p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres connection URL; also reads DATABASE_URL")
@@ -722,6 +748,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.threads < 1 or args.concurrency < 1 or args.batch_size < 1:
         print("threads, concurrency, and batch-size must be positive", file=sys.stderr)
         return 2
+    if args.fast and args.stealth:
+        print("Choose either --fast or --stealth, not both.", file=sys.stderr)
+        return 2
+
+    if args.fast:
+        # Speed-first profile: crank concurrency and rate, shorten the connect
+        # timeout, and skip banner/verify reads so we just confirm open ports as
+        # fast as the host and FD limits allow. The FD-limit guard below may
+        # auto-reduce concurrency if the system can't supply enough sockets.
+        args.concurrency = max(args.concurrency, 512)
+        args.verify_retries = 0
+        args.banner = False
+        if args.timeout > 0.5:
+            args.timeout = 0.4
+        if 0 < args.rate < 1500:
+            args.rate = 1500
+        print(
+            f"Fast mode: rate={args.rate}/s concurrency={args.concurrency} "
+            f"timeout={args.timeout}s, banner/verify off.",
+            file=sys.stderr,
+        )
 
     if args.stealth:
         # Low-and-slow profile. This is a full TCP *connect* scan, so it can't
@@ -748,8 +795,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         import resource
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        target = min(max(soft, args.threads * args.concurrency + 256), hard)
-        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+        needed = args.threads * args.concurrency + 256
+        if needed > soft:
+            if needed > hard:
+                safe = max(1, (soft - 256) // args.threads)
+                print(f"Warning: requested threads={args.threads} × concurrency={args.concurrency} needs ~{needed} FDs, "
+                      f"but the hard limit is {hard}. Auto-reducing concurrency to {safe}.", file=sys.stderr)
+                args.concurrency = safe
+            else:
+                try:
+                    resource.setrlimit(resource.RLIMIT_NOFILE, (needed, hard))
+                except Exception:
+                    safe = max(1, (soft - 256) // args.threads)
+                    print(f"Warning: could not raise file-descriptor limit to {needed}. Auto-reducing concurrency to {safe}.", file=sys.stderr)
+                    args.concurrency = safe
+        else:
+            target = min(max(soft, args.threads * args.concurrency + 256), hard)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
     except Exception:
         pass
 

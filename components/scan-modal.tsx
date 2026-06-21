@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -73,8 +73,26 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [discover, setDiscover] = useState(false);
   const [stealth, setStealth] = useState(false);
   const [deep, setDeep] = useState(false);
+  const [fast, setFast] = useState(false);
 
   const portsValue = preset === "custom" ? customPorts : preset;
+
+  // Fast (speed-first, no banners) and the slow/thorough modes can't both apply.
+  const enableFast = (v: boolean) => {
+    setFast(v);
+    if (v) {
+      setStealth(false);
+      setDeep(false);
+    }
+  };
+  const enableStealth = (v: boolean) => {
+    setStealth(v);
+    if (v) setFast(false);
+  };
+  const enableDeep = (v: boolean) => {
+    setDeep(v);
+    if (v) setFast(false);
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,6 +122,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
           discover,
           stealth,
           deep,
+          fast,
         }),
       });
       const data = await res.json();
@@ -158,15 +177,22 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
 
             <div className="flex flex-col gap-2">
               <OptionRow
+                checked={fast}
+                onChange={enableFast}
+                icon={<Zap />}
+                title="Fast mode"
+                desc="Speed-first sweep: cranks concurrency and rate, shortens the connect timeout, and skips banner/verify reads. Quickest way to confirm which ports are open, but no service fingerprints and may miss slow hosts. Turns off Deep / Low-and-slow."
+              />
+              <OptionRow
                 checked={deep}
-                onChange={setDeep}
+                onChange={enableDeep}
                 icon={<Microscope />}
                 title="Deep service scan"
                 desc="Read banners on every open port (not just HTTP), probe non-standard HTTP servers, re-verify to merge the best fingerprint, and allow longer reads. Surfaces software, versions and OS (e.g. Apache 2.4 / Debian 12) for the Technology panel. Slower per host."
               />
               <OptionRow
                 checked={stealth}
-                onChange={setStealth}
+                onChange={enableStealth}
                 icon={<ShieldOff />}
                 title="Low-and-slow mode"
                 desc="Probes one connection at a time, interleaves ports across hosts, randomises order, adds jitter and holds the rate low to slip under simple port-scan thresholds. It's a full TCP connect scan, so it's not true IDS evasion — lower the rate further if you still get flagged. Much slower."
@@ -208,6 +234,11 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 {stealth && (
                   <p className="mt-2 text-[11px] leading-snug text-amber">
                     Low-and-slow mode overrides these: concurrency is forced to 1, rate held at ~4/s, and retries are disabled.
+                  </p>
+                )}
+                {fast && (
+                  <p className="mt-2 text-[11px] leading-snug text-amber">
+                    Fast mode raises these: concurrency ≥512, rate ≥1500/s, timeout ≤0.4s, banner/verify off.
                   </p>
                 )}
                 <div style={{ marginTop: 10 }}>

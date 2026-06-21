@@ -8,6 +8,7 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  Download,
   Globe,
   MapPin,
   Monitor,
@@ -21,6 +22,7 @@ import {
 import TopNav from "./top-nav";
 import HostCard from './host-card';
 import Link from 'next/link';
+import { downloadText, toCsv } from '@/lib/export';
 
 type Finding = {
   id: number;
@@ -30,6 +32,7 @@ type Finding = {
   state: string;
   latencyMs: number | null;
   banner: string | null;
+  headers: string | null;
   service: string | null;
   product: string | null;
   observedAt: string;
@@ -251,6 +254,44 @@ function DashboardInner() {
               Showing <b>{rows.length ? `${start}–${end}` : '0'}</b> of <b>{total.toLocaleString()}</b> results
             </span>
             <span className="results-refresh">
+              {rows.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="results-export"
+                    title="Download these results as JSON"
+                    onClick={() => downloadText('portglass-results.json', JSON.stringify(rows, null, 2), 'application/json')}
+                  >
+                    <Download size={13} /> JSON
+                  </button>
+                  <button
+                    type="button"
+                    className="results-export"
+                    title="Download these results as CSV"
+                    onClick={() =>
+                      downloadText(
+                        'portglass-results.csv',
+                        toCsv(
+                          rows.map((r) => ({
+                            ip: r.ip,
+                            port: r.port,
+                            service: r.service ?? '',
+                            product: r.product ?? '',
+                            latency_ms: r.latencyMs ?? '',
+                            country: r.countryIso ?? '',
+                            asn: r.asn ?? '',
+                            banner: r.banner ?? '',
+                            observed_at: r.observedAt,
+                          }))
+                        ),
+                        'text/csv'
+                      )
+                    }
+                  >
+                    <Download size={13} /> CSV
+                  </button>
+                </>
+              )}
               <Activity size={13} />
               Auto-refresh on
             </span>

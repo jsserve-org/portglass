@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import CopyButton from "./copy-button";
+import { curlFor, looksHttp } from "@/lib/commands";
 
 const queryClient = makeQueryClient();
 
@@ -119,8 +121,8 @@ function HostsListInner() {
               </thead>
               <tbody>
                 {hosts.map((h) => (
-                  <>
-                    <tr key={h.ip}>
+                  <Fragment key={h.ip}>
+                    <tr>
                       <td>
                         <Link href={`/host/${encodeURIComponent(h.ip)}`} className="ip-link">
                           <Globe size={12} />
@@ -153,11 +155,29 @@ function HostsListInner() {
                     {expanded === h.ip && (
                       <tr className="expanded-row">
                         <td colSpan={7}>
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <CopyButton text={h.ip} label="Copy IP" title="Copy this IP" />
+                            {h.ports?.some((p) => looksHttp(p.port, p.service)) && (
+                              <CopyButton
+                                text={h.ports
+                                  .filter((p) => looksHttp(p.port, p.service))
+                                  .map((p) => curlFor(h.ip, p.port, p.service))
+                                  .join("\n")}
+                                label="Copy curl set"
+                                title="Copy a curl command for every HTTP port on this host"
+                              />
+                            )}
+                          </div>
                           <div className="host-ports-grid">
                             {h.ports?.map((p) => (
                               <div key={p.port} className="host-port-chip">
                                 <div className="host-port-top">
                                   <span className="port-badge">{p.port}</span>
+                                  <CopyButton
+                                    text={curlFor(h.ip, p.port, p.service)}
+                                    title="Copy as curl"
+                                    className="ml-auto"
+                                  />
                                   {isHttpPort(p.port) && (
                                     <a
                                       href={`http${p.port === 443 || p.port === 8443 ? "s" : ""}://${h.ip}:${p.port}`}
@@ -183,7 +203,7 @@ function HostsListInner() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

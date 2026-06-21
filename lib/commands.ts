@@ -22,6 +22,26 @@ function httpScheme(port: number, service?: string | null): 'http' | 'https' {
   return 'http';
 }
 
+/** The URL for an HTTP(S) finding, e.g. https://1.2.3.4:8443/. */
+export function httpUrl(ip: string, port: number, service?: string | null): string {
+  return `${httpScheme(port, service)}://${ip}:${port}/`;
+}
+
+/**
+ * A single ready-to-paste curl for a finding, for one-click "copy as curl"
+ * buttons. HTTP(S) ports get a redirect-following GET (-k on TLS to ignore the
+ * self-signed certs common on scanned hosts); non-HTTP ports fall back to a raw
+ * netcat banner grab so the button is always useful.
+ */
+export function curlFor(ip: string, port: number, service?: string | null): string {
+  if (looksHttp(port, service)) {
+    const url = httpUrl(ip, port, service);
+    const k = url.startsWith('https') ? '-k ' : '';
+    return `curl -sS ${k}-L "${url}"`;
+  }
+  return `nc -v -w 5 ${ip} ${port}`;
+}
+
 /**
  * Build a prioritised list of copyable commands for a finding. HTTP services
  * lead with web tooling (sqlmap, curl, whatweb, nikto); known service ports get
@@ -35,8 +55,11 @@ export function suggestCommands(ip: string, port: number, service?: string | nul
     const url = `${httpScheme(port, service)}://${target}/`;
     const k = url.startsWith('https') ? '-k ' : '';
     out.push(
-      { label: 'sqlmap', cmd: `sqlmap -u "${url}" --batch --crawl=2 --random-agent` },
       { label: 'curl headers', cmd: `curl -sSI ${k}"${url}"` },
+      { label: 'curl GET', cmd: `curl -sS ${k}-L "${url}"` },
+      { label: 'curl save', cmd: `curl -sS ${k}-L "${url}" -o ${ip}_${port}.http` },
+      { label: 'curl timing', cmd: `curl -sS ${k}-o /dev/null -w "code=%{http_code} time=%{time_total}s size=%{size_download}b\\n" "${url}"` },
+      { label: 'sqlmap', cmd: `sqlmap -u "${url}" --batch --crawl=2 --random-agent` },
       { label: 'whatweb', cmd: `whatweb -a 3 "${url}"` },
       { label: 'nikto', cmd: `nikto -h "${url}"` },
       { label: 'nmap http', cmd: `nmap -Pn -sV -p ${port} --script http-enum,http-headers ${ip}` },

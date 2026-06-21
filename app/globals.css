@@ -413,11 +413,23 @@ body::before {
 .results-count b { color: var(--text); font-weight: 600; }
 
 .results-refresh {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 10px;
   font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 1px;
 }
 .results-refresh svg { color: var(--signal); }
+.results-export {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 2px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-muted); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.results-export:hover { color: var(--beam); border-color: var(--beam); }
+.results-export svg { color: var(--text-muted); }
+.results-export:hover svg { color: var(--beam); }
 
 /* ============ Host Cards ============ */
 .results-list { display: flex; flex-direction: column; gap: 12px; }
@@ -486,7 +498,26 @@ body::before {
   font-family: var(--font-mono); font-size: 12px; line-height: 1.65;
   color: var(--text-muted);
   white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+  max-height: 360px;
 }
+
+.card-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 9px 20px;
+  border-top: 1px solid var(--border);
+}
+.card-detail-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: auto;
+  padding: 5px 9px; border-radius: 2px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.card-detail-toggle:hover { color: var(--beam); border-color: var(--beam); }
+.card-detail .banner-block:first-child { border-top: none; }
 
 /* ============ Badges ============ */
 .badge {

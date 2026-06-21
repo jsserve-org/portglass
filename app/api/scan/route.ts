@@ -57,11 +57,14 @@ export async function POST(request: Request) {
   // Deep mode trades speed for richer fingerprints: read banners on every open
   // port (not just HTTP), re-probe once to merge the best result, and allow a
   // longer read window so slow services finish their greeting/response.
-  const verifyRetries = Math.min(Math.max(parseInt(body.verifyRetries ?? (deep ? '1' : '0'), 10), 0), 5);
-  const banner = !!body.banner || deep;
+  const stealth = !!body.stealth;
+  // Fast mode is a speed-first sweep: it forces banner/verify off (the scanner
+  // also enforces this) and is mutually exclusive with the low-and-slow mode.
+  const fast = !!body.fast && !stealth;
+  const verifyRetries = fast ? 0 : Math.min(Math.max(parseInt(body.verifyRetries ?? (deep ? '1' : '0'), 10), 0), 5);
+  const banner = !fast && (!!body.banner || deep);
   const proxy = String(body.proxy ?? '').trim();
   const discover = !!body.discover;
-  const stealth = !!body.stealth;
   const readTimeout = Math.min(Math.max(parseFloat(body.readTimeout ?? (deep ? '5.0' : '3.0')), 0.5), 15);
 
   // Insert scan_runs record so we know the run_id immediately
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
   if (verifyRetries > 0) args.push('--verify-retries', String(verifyRetries));
   if (banner) args.push('--banner');
   if (stealth) args.push('--stealth');
+  if (fast) args.push('--fast');
   if (proxy) {
     args.push('--proxy', proxy);
     env['SCAN_PROXY'] = proxy;

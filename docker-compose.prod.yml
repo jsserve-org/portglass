@@ -21,8 +21,11 @@ services:
     # Hard memory ceiling: the app and the scanner subprocess share this
     # container, so this caps their combined footprint. On a small host shared
     # with other services it guarantees a heavy scan can only OOM (and restart)
-    # Portglass itself, never the rest of the box. Override with PORTGLASS_MEM.
-    mem_limit: ${PORTGLASS_MEM:-1024m}
+    # Portglass itself, never the rest of the box. memswap_limit == mem_limit
+    # disables swap for the container, so it OOM-restarts cleanly instead of
+    # dragging the whole box into swap-thrash. Override with PORTGLASS_MEM.
+    mem_limit: ${PORTGLASS_MEM:-1536m}
+    memswap_limit: ${PORTGLASS_MEM:-1536m}
     mem_reservation: 256m
     depends_on:
       postgres:

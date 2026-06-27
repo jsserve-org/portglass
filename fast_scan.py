@@ -652,6 +652,12 @@ def worker(
             batches.task_done()
             return
         try:
+            # Record an IP from this batch so the UI can show roughly where the
+            # scan currently is. Cheap and approximate (batch granularity).
+            if batch:
+                with stats_lock:
+                    stats["current_ip"] = batch[-1][0]
+
             def mark_attempt() -> None:
                 with stats_lock:
                     stats["attempted"] += 1
@@ -682,7 +688,7 @@ def worker(
             batches.task_done()
 
 
-def progress_thread(stats: dict[str, int], stats_lock: threading.Lock, total: int, started: float, stop: threading.Event) -> None:
+def progress_thread(stats: dict, stats_lock: threading.Lock, total: int, started: float, stop: threading.Event) -> None:
     while not stop.wait(2.0):
         with stats_lock:
             attempted = stats["attempted"]
@@ -693,6 +699,41 @@ def progress_thread(stats: dict[str, int], stats_lock: threading.Lock, total: in
         eta = (total - attempted) / rate if rate > 0 else 0.0
         print(f"\r{attempted:,}/{total:,} {pct:5.1f}% | {rate:,.0f}/s | open {opened:,} | ETA {eta/60:.1f}m", end="", file=sys.stderr)
     print(file=sys.stderr)
+
+
+def db_progress_thread(
+    db_conn,
+    db_lock: threading.Lock,
+    run_id: int,
+    stats: dict,
+    stats_lock: threading.Lock,
+    total: int,
+    stop: threading.Event,
+) -> None:
+    """Persist live progress to scan_runs every few seconds.
+
+    progress_at acts as a heartbeat the server uses to tell a running scan from
+    a dead one (instead of an unreliable pid check). Writes are best-effort: a
+    failed heartbeat must never disturb the scan.
+    """
+    while True:
+        done = stop.wait(4.0)
+        with stats_lock:
+            attempted = stats["attempted"]
+            opened = stats["open"]
+            current_ip = stats.get("current_ip") or None
+        try:
+            with db_lock, db_conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE scan_runs SET total_targets = %s, attempted_targets = %s, "
+                    "open_count = %s, current_ip = %s, progress_at = now() WHERE id = %s",
+                    (total, attempted, opened, current_ip, run_id),
+                )
+            db_conn.commit()
+        except Exception as exc:  # noqa: BLE001 - heartbeat must never raise
+            print(f"\nprogress heartbeat failed: {exc}", file=sys.stderr)
+        if done:
+            return
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -832,9 +873,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             db_conn = psycopg.connect(args.db_url)
             if args.run_id is not None:
                 run_id = args.run_id
+                # Reuse the existing row. Keep started_at as-is so a resumed run
+                # doesn't appear to "restart" from zero elapsed; just clear the
+                # finish/heartbeat so it reads as freshly active again.
                 with db_conn.cursor() as cur:
                     cur.execute(
-                        "UPDATE scan_runs SET cidr = %s, ports = %s, started_at = now(), finished_at = NULL WHERE id = %s",
+                        "UPDATE scan_runs SET cidr = %s, ports = %s, finished_at = NULL, progress_at = now() WHERE id = %s",
                         (str(net), ",".join(map(str, ports)), run_id),
                     )
                 db_conn.commit()
@@ -901,7 +945,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         total = sum(1 for _ in target_iter())
 
         batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
-        stats = {"attempted": 0, "open": 0}
+        stats: dict = {"attempted": 0, "open": 0, "current_ip": None}
         stats_lock = threading.Lock()
         csv_lock = threading.Lock()
         stop_progress = threading.Event()
@@ -915,6 +959,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             progress = threading.Thread(target=progress_thread, args=(stats, stats_lock, total, started, stop_progress), daemon=True)
             progress.start()
+
+            # Persist live progress + heartbeat to the DB when running against
+            # Postgres with a known run_id (the web app path).
+            db_progress = None
+            if db_conn is not None and run_id is not None:
+                db_progress = threading.Thread(
+                    target=db_progress_thread,
+                    args=(db_conn, db_lock, run_id, stats, stats_lock, total, stop_progress),
+                    daemon=True,
+                )
+                db_progress.start()
 
             print(
                 f"Scanning {args.cidr} on {len(ports)} port(s): {total:,} TCP connect attempts. "
@@ -947,6 +1002,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         pass
                 for t in workers:
                     t.join(timeout=1.0)
+                if db_progress is not None:
+                    db_progress.join(timeout=6.0)
 
         elapsed = time.time() - started
         target = f"Postgres run_id={run_id}" if args.no_csv else str(out)

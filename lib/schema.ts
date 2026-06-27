@@ -12,6 +12,14 @@ export const scanRuns = pgTable('scan_runs', {
   // replayed verbatim by the resume-on-boot reconciler.
   scanArgs: text('scan_args'),
   notes: text('notes'),
+  // Live progress, written periodically by the scanner. progressAt doubles as a
+  // heartbeat: a run with no finishedAt whose progressAt is stale is treated as
+  // dead (the scanner died) rather than "running forever".
+  totalTargets: integer('total_targets'),
+  attemptedTargets: integer('attempted_targets'),
+  openCount: integer('open_count'),
+  currentIp: text('current_ip'),
+  progressAt: timestamp('progress_at', { withTimezone: true }),
 });
 
 export const portFindings = pgTable('port_findings', {

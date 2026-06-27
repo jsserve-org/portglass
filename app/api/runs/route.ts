@@ -46,28 +46,54 @@ export async function GET() {
   }
 
   const now = Date.now();
+  // A scan writes a heartbeat (progress_at) every few seconds while running. If
+  // an unfinished run's heartbeat is older than this, its scanner is dead (crash
+  // / OOM / hard restart) and we report it as stalled rather than "running".
+  const STALE_MS = 60 * 1000;
 
   const enriched = runs.map((run) => {
     const findingsCount = countMap[run.id] ?? 0;
     const started = new Date(run.startedAt).getTime();
     const finished = run.finishedAt ? new Date(run.finishedAt).getTime() : null;
-    const elapsedSec = finished ? Math.round((finished - started) / 1000) : Math.round((now - started) / 1000);
+    const progressTs = run.progressAt ? new Date(run.progressAt).getTime() : null;
+    // For an unfinished run, freeze elapsed at the last heartbeat if it's stale,
+    // so a dead scan doesn't keep ticking up its "elapsed" forever.
+    const liveEnd = finished ?? (progressTs && now - progressTs > STALE_MS ? progressTs : now);
+    const elapsedSec = Math.max(0, Math.round((liveEnd - started) / 1000));
 
-    let status: 'active' | 'completed' | 'killed' | 'failed' = 'active';
+    const stale = !run.finishedAt && (!progressTs || now - progressTs > STALE_MS);
+
+    let status: 'active' | 'completed' | 'killed' | 'failed' | 'stalled' = 'active';
     if (run.finishedAt) {
-      status = run.notes?.includes('Force killed') ? 'killed' : 'completed';
+      status = run.notes?.includes('Force killed') ? 'killed'
+        : run.notes?.includes('Interrupted') ? 'failed'
+        : 'completed';
+    } else if (stale) {
+      status = 'stalled';
     }
 
+    // Prefer the scanner's real target count + attempts when available; fall
+    // back to a CIDR×ports estimate for older runs without progress data.
     const totalHosts = ipCountFromCidr(run.cidr);
     const portsCount = run.ports.split(',').length;
-    const totalTargets = totalHosts * portsCount;
+    const totalTargets = run.totalTargets ?? totalHosts * portsCount;
+    const attempted = run.attemptedTargets ?? 0;
     const estimatedTotalSec = totalTargets > 0 ? Math.round(totalTargets / 250) : 0;
-    const etaSec = !run.finishedAt && estimatedTotalSec > 0
+
+    let progressPct: number;
+    if (run.finishedAt) {
+      progressPct = 100;
+    } else if (run.totalTargets && run.totalTargets > 0) {
+      progressPct = Math.min(99, Math.round((attempted / run.totalTargets) * 100));
+    } else {
+      progressPct = totalTargets > 0
+        ? Math.min(99, Math.round((elapsedSec / Math.max(elapsedSec, estimatedTotalSec)) * 100))
+        : 0;
+    }
+
+    const etaSec = !run.finishedAt && !stale && estimatedTotalSec > 0
       ? Math.max(0, estimatedTotalSec - elapsedSec)
       : 0;
-    const progressPct = totalTargets > 0 && !run.finishedAt
-      ? Math.min(99, Math.round((elapsedSec / Math.max(elapsedSec, estimatedTotalSec)) * 100))
-      : run.finishedAt ? 100 : 0;
 
     return {
       ...run,
@@ -76,7 +102,11 @@ export async function GET() {
       etaSec,
       estimatedTotalSec,
       status,
-      progressPct: run.finishedAt ? 100 : progressPct,
+      stale,
+      totalTargets,
+      attemptedTargets: attempted,
+      currentIp: run.currentIp ?? null,
+      progressPct,
     };
   });
 

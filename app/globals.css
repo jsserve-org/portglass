@@ -1033,6 +1033,11 @@ body::before {
 .progress-fill { height: 100%; background: var(--signal); transition: width 0.6s ease; }
 
 .scan-progress-box { padding: 16px 18px; border-radius: 2px; background: var(--bg-card); border: 1px solid var(--border); border-left: 2px solid var(--beam); margin-bottom: 24px; }
+.scan-card-current { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); }
+.scan-card-current svg { color: var(--accent-cyan); }
+.scan-card-current .spacer-dot { color: var(--text-muted); margin-left: 4px; }
+.scan-progress-stalled { border-left-color: var(--amber); }
+.scan-progress-stalled .scan-progress-title, .scan-progress-stalled .scan-progress-pct { color: var(--amber); }
 .scan-progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .scan-progress-title { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; color: var(--beam); }
 .scan-progress-pct { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--beam); }

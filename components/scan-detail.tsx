@@ -40,6 +40,11 @@ type ScanRun = {
   finishedAt: string | null;
   scannerPid: number | null;
   notes: string | null;
+  totalTargets: number | null;
+  attemptedTargets: number | null;
+  openCount: number | null;
+  currentIp: string | null;
+  progressAt: string | null;
 };
 
 type Geo = {
@@ -109,11 +114,29 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const geo = scan.data?.geo;
   const findings = scan.data?.findings ?? [];
   const stats = scan.data?.stats;
-  const isActive = run && !run.finishedAt;
 
+  // A live scan heartbeats progress_at every few seconds. Treat an unfinished
+  // run whose heartbeat has gone quiet as stalled (scanner died) rather than
+  // "in progress" — this is what prevented the old "Elapsed 85h, still Live".
+  const STALE_MS = 60 * 1000;
+  const progressTs = run?.progressAt ? new Date(run.progressAt).getTime() : null;
+  const stalled = !!run && !run.finishedAt && (!progressTs || Date.now() - progressTs > STALE_MS);
+  const isActive = !!run && !run.finishedAt && !stalled;
+
+  // Freeze elapsed at the last heartbeat once stalled, so a dead scan stops
+  // ticking upward.
+  const elapsedEnd = run?.finishedAt
+    ? new Date(run.finishedAt).getTime()
+    : stalled && progressTs
+    ? progressTs
+    : Date.now();
   const elapsedSec = run
-    ? Math.round((Date.now() - new Date(run.startedAt).getTime()) / 1000)
+    ? Math.max(0, Math.round((elapsedEnd - new Date(run.startedAt).getTime()) / 1000))
     : 0;
+  const livePct =
+    run?.totalTargets && run.totalTargets > 0
+      ? Math.min(99, Math.round(((run.attemptedTargets ?? 0) / run.totalTargets) * 100))
+      : null;
   const fmtElapsed = (sec: number) => {
     if (sec < 60) return `${sec}s`;
     if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
@@ -217,18 +240,43 @@ function ScanDetailInner({ runId }: { runId: string }) {
               <span className="scan-progress-title">
                 Scanning in progress…
               </span>
-              <span className="scan-progress-pct">Live</span>
+              <span className="scan-progress-pct">{livePct != null ? `${livePct}%` : "Live"}</span>
             </div>
             <div className="progress-track">
-              <div className="progress-fill" style={{ width: "100%" }} />
+              <div
+                className="progress-fill"
+                style={{ width: livePct != null ? `${livePct}%` : "100%" }}
+              />
             </div>
             <div className="scan-progress-stats">
               <span><Clock size={12} /> Elapsed {fmtElapsed(elapsedSec)}</span>
+              {run?.currentIp && (
+                <span style={{ color: "var(--accent-cyan)" }}>
+                  <Radio size={12} /> Scanning {run.currentIp}
+                </span>
+              )}
+              {run?.totalTargets ? (
+                <span><Server size={12} /> {(run.attemptedTargets ?? 0).toLocaleString()} / {run.totalTargets.toLocaleString()} probes</span>
+              ) : null}
               <span><Radio size={12} /> {findings.length} open finding{findings.length === 1 ? "" : "s"} so far</span>
-              <span><Globe size={12} /> {stats?.hosts ?? 0} host{stats?.hosts === 1 ? "" : "s"} discovered</span>
               {stats?.etaSec > 0 && (
                 <span style={{ color: "var(--accent-cyan)" }}><Zap size={12} /> ETA {fmtEta(stats.etaSec)} remaining</span>
               )}
+            </div>
+          </div>
+        )}
+
+        {stalled && (
+          <div className="scan-progress-box scan-progress-stalled">
+            <div className="scan-progress-header">
+              <span className="scan-progress-title">Scan stalled — no heartbeat</span>
+              <span className="scan-progress-pct">Interrupted</span>
+            </div>
+            <div className="scan-progress-stats">
+              <span><Clock size={12} /> Ran for {fmtElapsed(elapsedSec)} before going quiet</span>
+              {run?.currentIp && <span><Radio size={12} /> Last IP {run.currentIp}</span>}
+              <span><Radio size={12} /> {findings.length} finding{findings.length === 1 ? "" : "s"} saved</span>
+              <span>The scanner process stopped (restart/crash). Re-run the scan to continue.</span>
             </div>
           </div>
         )}

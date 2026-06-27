@@ -37,8 +37,11 @@ type ScanRun = {
   elapsedSec: number;
   etaSec: number;
   estimatedTotalSec: number;
-  status: "active" | "completed" | "killed" | "failed";
+  status: "active" | "completed" | "killed" | "failed" | "stalled";
   progressPct: number;
+  currentIp: string | null;
+  totalTargets: number | null;
+  attemptedTargets: number | null;
 };
 
 function fmtDuration(sec: number): string {
@@ -77,9 +80,15 @@ function StatusBadge({ status }: { status: string }) {
         <XCircle size={10} /> Killed
       </span>
     );
+  if (status === "stalled")
+    return (
+      <span className="scan-status-badge scan-status-failed">
+        <AlertCircle size={10} /> Stalled
+      </span>
+    );
   return (
     <span className="scan-status-badge scan-status-failed">
-      <AlertCircle size={10} /> Failed
+      <AlertCircle size={10} /> Interrupted
     </span>
   );
 }
@@ -178,6 +187,14 @@ function ScansListInner() {
                   {fmtDuration(run.elapsedSec)}
                 </div>
                 {run.status === "active" && <ProgressBar pct={run.progressPct} />}
+                {run.status === "active" && run.currentIp && (
+                  <div className="scan-card-current" title="Currently scanning">
+                    <Radio size={11} /> {run.currentIp}
+                    {run.totalTargets ? (
+                      <span className="spacer-dot">· {Math.min(99, Math.round(((run.attemptedTargets ?? 0) / run.totalTargets) * 100))}%</span>
+                    ) : null}
+                  </div>
+                )}
                 <div className="scan-card-footer">
                   <span><Server size={12} /> {run.findingsCount} open</span>
                   {run.status === "active" && run.etaSec > 0 && (

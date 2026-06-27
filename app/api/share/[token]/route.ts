@@ -39,8 +39,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   if (state !== 'ok') return NextResponse.json({ error: state }, { status: 410 });
 
   const payload: any = { ...meta(share!) };
-  if (!share!.passwordHash) payload.data = JSON.parse(share!.snapshot);
-  return NextResponse.json(payload);
+  if (!share!.passwordHash) {
+    payload.data = JSON.parse(share!.snapshot);
+    // Snapshot is immutable; let the browser/edge cache it briefly. Kept short
+    // so a revoke/expiry still takes effect quickly.
+    return NextResponse.json(payload, {
+      headers: { 'Cache-Control': 'public, max-age=30, s-maxage=60' },
+    });
+  }
+  return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 // POST /api/share/[token] -> public unlock. Body { password }. Returns the

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { sql } from 'drizzle-orm';
+import { cached } from '@/lib/cache';
 
 export async function GET() {
   if (authEnabled) {
@@ -12,6 +13,7 @@ export async function GET() {
     }
   }
 
+  const result = await cached('top-hosts', 30_000, async () => {
   // Best hosts = lowest average latency with the most open ports.
   // Limit to 10 top performers.
   const rows = await db.execute(sql`
@@ -30,7 +32,7 @@ export async function GET() {
     LIMIT 20
   `);
 
-  const result = (rows.rows as any[]).map((r) => ({
+  return (rows.rows as any[]).map((r) => ({
     ip: String(r.ip),
     openPorts: Number(r.open_ports),
     avgLatencyMs: Number(r.avg_latency_ms),
@@ -38,6 +40,7 @@ export async function GET() {
     lastSeen: String(r.last_seen),
     ports: (r.ports as number[]) ?? [],
   }));
+  });
 
   return NextResponse.json(result);
 }

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { launchScanner } from '@/lib/scanner';
+import { invalidate } from '@/lib/cache';
 
 function validateCIDR(cidr: string): boolean {
   try {
@@ -111,6 +112,10 @@ export async function POST(request: Request) {
     .where(eq(scanRuns.id, runId));
 
   launchScanner(runId, args, env);
+
+  // Surface the new run immediately in the cached scans list / stats.
+  invalidate('runs');
+  invalidate('stats');
 
   return NextResponse.json({ runId, status: 'started' });
 }

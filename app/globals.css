@@ -997,14 +997,15 @@ body::before {
   color: var(--text); font-family: var(--font-mono); font-size: 13px;
 }
 
-.scans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
-.scan-card-link { text-decoration: none; color: inherit; }
+.scans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; align-items: stretch; }
+.scan-card-link { text-decoration: none; color: inherit; display: flex; }
 
 .scan-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-left: 2px solid var(--signal-dim); border-radius: 2px;
   padding: 16px; display: flex; flex-direction: column; gap: 11px;
   transition: border-color 0.15s;
+  flex: 1; min-width: 0;
 }
 .scan-card:hover { border-color: var(--border-light); border-left-color: var(--signal); }
 .scan-card-active { border-left-color: var(--beam) !important; background: rgba(63, 199, 255, 0.04); }
@@ -1026,7 +1027,7 @@ body::before {
 .scan-card-cidr { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .scan-card-cidr svg { color: var(--signal); }
 .scan-card-ports { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
-.scan-card-footer { display: flex; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.scan-card-footer { display: flex; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-top: auto; padding-top: 2px; }
 
 /* ============ Progress bar ============ */
 .progress-track { height: 6px; background: var(--bg); border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }

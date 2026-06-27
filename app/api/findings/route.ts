@@ -3,6 +3,7 @@ import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { cached } from '@/lib/cache';
 
 const querySchema = z.object({
   q: z.string().optional().default(''),
@@ -83,15 +84,21 @@ export async function GET(request: Request) {
       )
   `;
 
-  const [rowsResult, totalRows] = await Promise.all([
-    db.execute(rowsQuery),
-    db.execute(countQuery),
-  ]);
-
-  return Response.json({
-    rows: rowsResult.rows,
-    total: Number((totalRows.rows[0] as any)?.value ?? 0),
-    page: query.page,
-    pageSize: query.pageSize,
+  // The search view auto-refreshes; identical queries (same filter + page) are
+  // common across refreshes/clients. Cache the heavy geo-enriched result 10s.
+  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}`;
+  const payload = await cached(cacheKey, 10_000, async () => {
+    const [rowsResult, totalRows] = await Promise.all([
+      db.execute(rowsQuery),
+      db.execute(countQuery),
+    ]);
+    return {
+      rows: rowsResult.rows,
+      total: Number((totalRows.rows[0] as any)?.value ?? 0),
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   });
+
+  return Response.json(payload);
 }

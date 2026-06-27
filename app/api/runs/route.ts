@@ -3,6 +3,7 @@ import { scanRuns, portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { desc, eq, count, inArray } from 'drizzle-orm';
 import { headers } from 'next/headers';
+import { cached } from '@/lib/cache';
 
 function ipCountFromCidr(cidr: string): number {
   try {
@@ -24,25 +25,27 @@ export async function GET() {
     if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const runs = await db.select().from(scanRuns).orderBy(desc(scanRuns.startedAt)).limit(100);
+  // Cache the raw DB reads briefly. The scans list / WebSocket poll this every
+  // ~2s per client; a 1.5s TTL keeps it feeling live while collapsing bursts of
+  // identical reads (across clients) into a single query.
+  const { runs, countMap } = await cached('runs:list', 1500, async () => {
+    const runs = await db.select().from(scanRuns).orderBy(desc(scanRuns.startedAt)).limit(100);
+    const countMap: Record<number, number> = {};
+    if (runs.length) {
+      const counts = await db
+        .select({ runId: portFindings.runId, cnt: count() })
+        .from(portFindings)
+        .where(inArray(portFindings.runId, runs.map((r) => r.id)))
+        .groupBy(portFindings.runId);
+      for (const row of counts) {
+        if (row.runId != null) countMap[row.runId] = Number(row.cnt);
+      }
+    }
+    return { runs, countMap };
+  });
 
   if (runs.length === 0) {
     return Response.json([]);
-  }
-
-  const runIds = runs.map((r) => r.id);
-
-  const findingsCounts = await db
-    .select({ runId: portFindings.runId, cnt: count() })
-    .from(portFindings)
-    .where(inArray(portFindings.runId, runIds))
-    .groupBy(portFindings.runId);
-
-  const countMap: Record<number, number> = {};
-  for (const row of findingsCounts) {
-    if (row.runId != null) {
-      countMap[row.runId] = Number(row.cnt);
-    }
   }
 
   const now = Date.now();

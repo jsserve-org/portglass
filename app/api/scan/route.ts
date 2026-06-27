@@ -4,7 +4,7 @@ import { scanRuns } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { launchScanner } from '@/lib/scanner';
+import { requestScan } from '@/lib/queue';
 import { invalidate } from '@/lib/cache';
 
 function validateCIDR(cidr: string): boolean {
@@ -81,7 +81,6 @@ export async function POST(request: Request) {
 
   const runId = run.id;
 
-  const env = { ...process.env } as NodeJS.ProcessEnv;
   const args = [
     'fast_scan.py',
     cidr,
@@ -99,23 +98,23 @@ export async function POST(request: Request) {
   if (banner) args.push('--banner');
   if (stealth) args.push('--stealth');
   if (fast) args.push('--fast');
-  if (proxy) {
-    args.push('--proxy', proxy);
-    env['SCAN_PROXY'] = proxy;
-  }
+  if (proxy) args.push('--proxy', proxy);
   if (discover) args.push('--discover');
 
-  // Persist the argv so an interrupted run can be resumed verbatim on boot.
+  // Persist the argv so the queue dispatcher / resume reconciler can launch or
+  // replay the run. The proxy is carried in argv (--proxy), so the dispatcher
+  // doesn't need the per-request env.
   await db
     .update(scanRuns)
     .set({ scanArgs: JSON.stringify(args) })
     .where(eq(scanRuns.id, runId));
 
-  launchScanner(runId, args, env);
+  // Start now if a slot is free, otherwise queue it.
+  const state = await requestScan(runId);
 
   // Surface the new run immediately in the cached scans list / stats.
   invalidate('runs');
   invalidate('stats');
 
-  return NextResponse.json({ runId, status: 'started' });
+  return NextResponse.json({ runId, status: state });
 }

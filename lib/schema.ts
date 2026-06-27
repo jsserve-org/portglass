@@ -20,6 +20,10 @@ export const scanRuns = pgTable('scan_runs', {
   openCount: integer('open_count'),
   currentIp: text('current_ip'),
   progressAt: timestamp('progress_at', { withTimezone: true }),
+  // When true the run is waiting in the queue and has not been launched yet.
+  // The dispatcher (lib/queue.ts) starts queued runs as concurrency slots free,
+  // so heavy scans never all run at once and saturate the host.
+  queued: boolean('queued').notNull().default(false),
 });
 
 export const portFindings = pgTable('port_findings', {

@@ -1023,6 +1023,7 @@ body::before {
 .scan-status-done { background: rgba(52, 224, 126, 0.1); color: var(--signal); border: 1px solid rgba(52, 224, 126, 0.25); }
 .scan-status-killed { background: rgba(255, 92, 92, 0.1); color: var(--red); border: 1px solid rgba(255, 92, 92, 0.3); }
 .scan-status-failed { background: rgba(245, 177, 61, 0.1); color: var(--amber); border: 1px solid rgba(245, 177, 61, 0.3); }
+.scan-status-queued { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); border: 1px solid var(--border); }
 
 .scan-card-cidr { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .scan-card-cidr svg { color: var(--signal); }
@@ -1089,6 +1090,8 @@ body::before {
 .scan-card-current { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); }
 .scan-card-current svg { color: var(--accent-cyan); }
 .scan-card-current .spacer-dot { color: var(--text-muted); margin-left: 4px; }
+.scan-progress-queued { border-left-color: var(--text-muted); }
+.scan-progress-queued .scan-progress-title, .scan-progress-queued .scan-progress-pct { color: var(--text-muted); }
 .scan-progress-stalled { border-left-color: var(--amber); }
 .scan-progress-stalled .scan-progress-title, .scan-progress-stalled .scan-progress-pct { color: var(--amber); }
 .scan-progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

@@ -47,6 +47,7 @@ type ScanRun = {
   openCount: number | null;
   currentIp: string | null;
   progressAt: string | null;
+  queued: boolean;
 };
 
 type Geo = {
@@ -124,9 +125,10 @@ function ScanDetailInner({ runId }: { runId: string }) {
   // run whose heartbeat has gone quiet as stalled (scanner died) rather than
   // "in progress" — this is what prevented the old "Elapsed 85h, still Live".
   const STALE_MS = 60 * 1000;
+  const queued = !!run?.queued && !run?.finishedAt;
   const progressTs = run?.progressAt ? new Date(run.progressAt).getTime() : null;
-  const stalled = !!run && !run.finishedAt && (!progressTs || Date.now() - progressTs > STALE_MS);
-  const isActive = !!run && !run.finishedAt && !stalled;
+  const stalled = !!run && !run.finishedAt && !queued && (!progressTs || Date.now() - progressTs > STALE_MS);
+  const isActive = !!run && !run.finishedAt && !queued && !stalled;
 
   // Freeze elapsed at the last heartbeat once stalled, so a dead scan stops
   // ticking upward.
@@ -277,6 +279,19 @@ function ScanDetailInner({ runId }: { runId: string }) {
               {stats?.etaSec > 0 && (
                 <span style={{ color: "var(--accent-cyan)" }}><Zap size={12} /> ETA {fmtEta(stats.etaSec)} remaining</span>
               )}
+            </div>
+          </div>
+        )}
+
+        {queued && (
+          <div className="scan-progress-box scan-progress-queued">
+            <div className="scan-progress-header">
+              <span className="scan-progress-title">Queued</span>
+              <span className="scan-progress-pct">Waiting</span>
+            </div>
+            <div className="scan-progress-stats">
+              <span><Clock size={12} /> Waiting for a free scan slot</span>
+              <span>It will start automatically when a running scan finishes.</span>
             </div>
           </div>
         )}

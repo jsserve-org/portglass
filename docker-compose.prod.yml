@@ -38,6 +38,8 @@ services:
       AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:-}
       AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:?set long random session secret}
+      # Max scans running at once; the rest queue. Keep low on this small host.
+      MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
 
 volumes:
   portglass_pg:

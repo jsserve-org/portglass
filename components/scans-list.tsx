@@ -37,7 +37,7 @@ type ScanRun = {
   elapsedSec: number;
   etaSec: number;
   estimatedTotalSec: number;
-  status: "active" | "completed" | "killed" | "failed" | "stalled";
+  status: "active" | "completed" | "killed" | "failed" | "stalled" | "queued";
   progressPct: number;
   currentIp: string | null;
   totalTargets: number | null;
@@ -62,6 +62,12 @@ function fmtEta(sec: number): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  if (status === "queued")
+    return (
+      <span className="scan-status-badge scan-status-queued">
+        <Clock size={10} /> Queued
+      </span>
+    );
   if (status === "active")
     return (
       <span className="scan-status-badge scan-status-active">

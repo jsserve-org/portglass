@@ -64,13 +64,16 @@ export async function GET() {
     const liveEnd = finished ?? (progressTs && now - progressTs > STALE_MS ? progressTs : now);
     const elapsedSec = Math.max(0, Math.round((liveEnd - started) / 1000));
 
-    const stale = !run.finishedAt && (!progressTs || now - progressTs > STALE_MS);
+    // A queued run hasn't launched yet, so it isn't stale even without a beat.
+    const stale = !run.finishedAt && !run.queued && (!progressTs || now - progressTs > STALE_MS);
 
-    let status: 'active' | 'completed' | 'killed' | 'failed' | 'stalled' = 'active';
+    let status: 'active' | 'completed' | 'killed' | 'failed' | 'stalled' | 'queued' = 'active';
     if (run.finishedAt) {
       status = run.notes?.includes('Force killed') ? 'killed'
         : run.notes?.includes('Interrupted') ? 'failed'
         : 'completed';
+    } else if (run.queued) {
+      status = 'queued';
     } else if (stale) {
       status = 'stalled';
     }
@@ -94,22 +97,24 @@ export async function GET() {
         : 0;
     }
 
-    const etaSec = !run.finishedAt && !stale && estimatedTotalSec > 0
+    const etaSec = !run.finishedAt && !stale && !run.queued && estimatedTotalSec > 0
       ? Math.max(0, estimatedTotalSec - elapsedSec)
       : 0;
 
     return {
       ...run,
       findingsCount,
-      elapsedSec,
+      // A queued run hasn't started; don't tick elapsed or show progress.
+      elapsedSec: run.queued ? 0 : elapsedSec,
       etaSec,
       estimatedTotalSec,
       status,
       stale,
+      queued: run.queued,
       totalTargets,
       attemptedTargets: attempted,
       currentIp: run.currentIp ?? null,
-      progressPct,
+      progressPct: run.queued ? 0 : progressPct,
     };
   });
 

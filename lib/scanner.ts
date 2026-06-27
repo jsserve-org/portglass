@@ -54,7 +54,14 @@ export function launchScanner(runId: number, args: string[], env: NodeJS.Process
     db.update(scanRuns)
       .set({ finishedAt: new Date(), scannerPid: null })
       .where(eq(scanRuns.id, runId))
-      .catch((err) => console.error(`Failed to finalize scan run_id=${runId}`, err));
+      .catch((err) => console.error(`Failed to finalize scan run_id=${runId}`, err))
+      .finally(() => {
+        // A slot just freed — start the next queued scan. Dynamic import avoids
+        // a static cycle (queue.ts imports launchScanner from here).
+        import('@/lib/queue')
+          .then((m) => m.dispatchQueued())
+          .catch((err) => console.error('dispatchQueued after exit failed', err));
+      });
   });
 
   return child;

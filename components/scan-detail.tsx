@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { makeQueryClient } from "@/lib/query";
+import { useScanWs } from "@/lib/use-scan-ws";
 
 const queryClient = makeQueryClient();
 import {
@@ -91,14 +92,17 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const [killing, setKilling] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
 
+  // Live scan detail (progress, current IP, findings) over WebSocket; fall back
+  // to REST polling when the socket is down or proxy-blocked.
+  const live = useScanWs(runId);
   const scan = useQuery({
-    queryKey: ["scan", runId],
+    queryKey: ["scan", String(runId)],
     queryFn: async () => {
       const res = await fetch(`/api/scan/${runId}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<{ run: ScanRun; geo?: Geo; findings: Finding[]; stats: any }>;
     },
-    refetchInterval: 5000,
+    refetchInterval: live ? false : 5000,
   });
 
   const summary = useQuery({
@@ -216,6 +220,15 @@ function ScanDetailInner({ runId }: { runId: string }) {
               <button className="danger-action-btn" onClick={forceKillScan} disabled={killing}>
                 {killing ? "Killing…" : "Force kill port scanning"}
               </button>
+            )}
+            {isActive && (
+              <span
+                className="scan-live-tag"
+                style={{ color: live ? "var(--accent-cyan)" : "var(--text-dim)" }}
+                title={live ? "Live via WebSocket" : "Polling (WebSocket unavailable)"}
+              >
+                <Radio size={12} /> {live ? "Live" : "Polling"}
+              </span>
             )}
           </div>
           <div className="scan-meta-bar">

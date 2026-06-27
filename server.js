@@ -67,23 +67,50 @@ runMigrations().then(() => app.prepare()).then(() => {
       const cookie = req.headers.cookie || '';
       let closed = false;
       let timer = null;
+      // Optional per-run detail subscription: the scan-detail page sends
+      // {type:'subscribe', runId} and we additionally push that run's full
+      // detail (run + findings + progress) each tick so it renders live too.
+      let subRunId = null;
 
-      const send = async () => {
+      const pushFrom = async (path, frame) => {
         if (closed) return;
         try {
-          const res = await fetch(`http://127.0.0.1:${port}/api/runs`, { headers: { cookie } });
+          const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { cookie } });
           if (res.status === 401) {
             ws.close(4401, 'unauthorized');
             return;
           }
           if (res.ok && !closed && ws.readyState === ws.OPEN) {
-            const data = await res.json();
-            ws.send(JSON.stringify({ type: 'scans', data }));
+            ws.send(JSON.stringify({ ...frame, data: await res.json() }));
           }
         } catch {
           /* transient; try again next tick */
         }
       };
+
+      const tick = async () => {
+        if (closed) return;
+        await pushFrom('/api/runs', { type: 'scans' });
+        if (subRunId != null) {
+          await pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
+        }
+      };
+
+      ws.on('message', (raw) => {
+        let msg;
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        if (msg && msg.type === 'subscribe') {
+          const id = parseInt(msg.runId, 10);
+          subRunId = Number.isNaN(id) ? null : id;
+          if (subRunId != null) pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
+        } else if (msg && msg.type === 'unsubscribe') {
+          subRunId = null;
+        }
+      });
 
       const stop = () => {
         closed = true;
@@ -92,8 +119,8 @@ runMigrations().then(() => app.prepare()).then(() => {
       ws.on('close', stop);
       ws.on('error', stop);
 
-      send();
-      timer = setInterval(send, 2000);
+      tick();
+      timer = setInterval(tick, 2000);
     });
   }
 

@@ -25,6 +25,7 @@ import { useMemo, useState } from "react";
 import WorldMap from "./world-map";
 import CommandMenu from "./command-menu";
 import CopyButton from "./copy-button";
+import ShareButton from "./share-button";
 import { curlFor, looksHttp } from "@/lib/commands";
 import { downloadText, toCsv } from "@/lib/export";
 import { detectTech } from "@/lib/tech";
@@ -235,8 +236,9 @@ function HostDetailInner({ ip }: { ip: string }) {
           </div>
         </div>
 
-        {/* Action bar: copy/export/raw */}
+        {/* Action bar: copy/export/raw/share */}
         <div className="mb-4 flex flex-wrap items-center gap-2">
+          <ShareButton kind="host" refId={ip} />
           <CopyButton text={ip} label="Copy IP" title="Copy this IP" />
           {hostCurlSet && (
             <CopyButton

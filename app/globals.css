@@ -1033,6 +1033,57 @@ body::before {
 .progress-fill { height: 100%; background: var(--signal); transition: width 0.6s ease; }
 
 .scan-progress-box { padding: 16px 18px; border-radius: 2px; background: var(--bg-card); border: 1px solid var(--border); border-left: 2px solid var(--beam); margin-bottom: 24px; }
+/* ============ Share button + modal ============ */
+.share-trigger { display: inline-flex; align-items: center; gap: 5px; }
+.share-help { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px; }
+.share-create-btn { width: 100%; justify-content: center; margin-top: 14px; }
+.share-created { margin-top: 14px; padding: 12px; border: 1px solid var(--signal); border-radius: 3px; background: rgba(52, 224, 126, 0.06); }
+.share-created-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--signal); }
+.share-created-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.share-created-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+.share-list { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.share-list-title { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+.share-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.share-list-row:last-child { border-bottom: none; }
+.share-list-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.share-list-link { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--beam); }
+.share-list-meta { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.share-list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.share-revoke { display: inline-flex; align-items: center; padding: 5px 7px; border-radius: 2px; border: 1px solid var(--border); background: rgba(255,255,255,0.02); color: var(--text-muted); cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+.share-revoke:hover { color: var(--destructive); border-color: var(--destructive); }
+
+/* ============ Shared report (public) ============ */
+.share-page { min-height: 100vh; background: var(--bg); padding: 32px 20px; }
+.share-gate {
+  max-width: 380px; margin: 12vh auto 0; padding: 32px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+}
+.share-gate svg { color: var(--signal); }
+.share-gate h1 { font-family: var(--font-cond); font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.share-gate p { font-size: 13px; color: var(--text-muted); }
+.share-gate .modal-input, .share-gate .auth-btn { width: 100%; }
+.share-report { max-width: 1100px; margin: 0 auto; }
+.share-report-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+.share-brand { display: flex; align-items: center; gap: 9px; font-family: var(--font-cond); font-weight: 700; letter-spacing: 1px; }
+.share-brand svg { color: var(--signal); }
+.share-tag {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--beam);
+  border: 1px solid var(--border); border-radius: 2px; padding: 3px 8px; margin-left: 4px;
+}
+.share-actions { display: flex; gap: 8px; }
+.share-title { font-family: var(--font-mono); font-size: 28px; font-weight: 700; letter-spacing: 0.5px; word-break: break-all; margin-bottom: 10px; }
+.share-meta {
+  display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 22px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);
+}
+.share-meta svg { color: var(--text-dim); vertical-align: -1px; margin-right: 4px; }
+.share-captured { color: var(--text-dim); }
+.share-findings { border: 1px solid var(--border); border-radius: 4px; overflow: auto; }
+.share-foot { margin-top: 20px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.share-foot svg { color: var(--signal); }
+
 .scan-live-tag { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 .scan-card-current { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); }
 .scan-card-current svg { color: var(--accent-cyan); }

@@ -16,12 +16,16 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = hasSessionCookie(request);
 
-  // Public paths
+  // Public paths. Shared reports (/share/<token>) and their data API are public
+  // by design; privileged share operations (create/list/revoke) self-gate auth
+  // inside their handlers.
   if (
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/_next/') ||
     pathname === '/api/me' ||
     pathname === '/api/health' ||
+    pathname.startsWith('/share/') ||
+    pathname.startsWith('/api/share/') ||
     pathname === '/favicon.ico'
   ) {
     return NextResponse.next();

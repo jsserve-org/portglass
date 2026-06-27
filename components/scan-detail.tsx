@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, QueryClientProvider } from "@tanstack/react-query";
 import { makeQueryClient } from "@/lib/query";
 import { useScanWs } from "@/lib/use-scan-ws";
+import ShareButton from "./share-button";
 
 const queryClient = makeQueryClient();
 import {
@@ -221,6 +222,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 {killing ? "Killing…" : "Force kill port scanning"}
               </button>
             )}
+            <ShareButton kind="scan" refId={String(run.id)} />
             {isActive && (
               <span
                 className="scan-live-tag"

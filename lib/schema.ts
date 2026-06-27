@@ -88,5 +88,24 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updatedAt', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Public, read-only shareable reports. A share captures an immutable JSON
+// snapshot of a scan run or a single host at share time, addressable by an
+// unguessable token. Optionally password-protected, expiring, and revocable.
+export const shares = pgTable('shares', {
+  token: text('token').primaryKey(),
+  kind: text('kind').notNull(), // 'scan' | 'host'
+  refId: text('ref_id').notNull(), // scan run id (as text) or host ip
+  title: text('title'),
+  snapshot: text('snapshot').notNull(), // JSON-encoded frozen report data
+  passwordHash: text('password_hash'), // null = no password
+  expiresAt: timestamp('expires_at', { withTimezone: true }), // null = never
+  revoked: boolean('revoked').notNull().default(false),
+  createdBy: text('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  refIdx: index('idx_shares_ref').on(table.kind, table.refId),
+}));
+
 export type ScanRun = typeof scanRuns.$inferSelect;
 export type PortFinding = typeof portFindings.$inferSelect;
+export type Share = typeof shares.$inferSelect;

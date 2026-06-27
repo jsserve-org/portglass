@@ -15,6 +15,13 @@
       "when": 1782533484966,
       "tag": "0001_scan_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782536623782,
+      "tag": "0002_shares",
+      "breakpoints": true
     }
   ]
 }

@@ -18,14 +18,15 @@ services:
   portglass:
     image: ${PORTGLASS_IMAGE:?set PORTGLASS_IMAGE}
     restart: unless-stopped
-    # Hard memory ceiling: the app and the scanner subprocess share this
-    # container, so this caps their combined footprint. On a small host shared
-    # with other services it guarantees a heavy scan can only OOM (and restart)
-    # Portglass itself, never the rest of the box. memswap_limit == mem_limit
-    # disables swap for the container, so it OOM-restarts cleanly instead of
-    # dragging the whole box into swap-thrash. Override with PORTGLASS_MEM.
+    # Memory ceiling for the app + scanner subprocess. RAM is capped at
+    # mem_limit; memswap_limit allows a bounded amount of swap ABOVE that so
+    # short memory spikes get absorbed instead of hard-killing Node (with swap
+    # fully disabled, Node 24 sized its heap from the cgroup to ~768MB and
+    # OOM-crashed on spikes). The swap is bounded, so the container still can't
+    # drag the whole box into runaway swap-thrash. Override via PORTGLASS_MEM /
+    # PORTGLASS_MEMSWAP.
     mem_limit: ${PORTGLASS_MEM:-1536m}
-    memswap_limit: ${PORTGLASS_MEM:-1536m}
+    memswap_limit: ${PORTGLASS_MEMSWAP:-3072m}
     mem_reservation: 256m
     depends_on:
       postgres:
@@ -46,6 +47,10 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?set long random session secret}
       # Max scans running at once; the rest queue. Keep low on this small host.
       MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
+      # Give V8 an explicit heap ceiling (~1GB) instead of letting it auto-size
+      # from the cgroup (which landed at ~768MB and OOM-crashed under load). Sits
+      # comfortably inside mem_limit + swap.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=1024}
 
 volumes:
   portglass_pg:

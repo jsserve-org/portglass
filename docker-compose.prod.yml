@@ -35,7 +35,10 @@ services:
     environment:
       PORT: 51111
       PUBLIC_PORT: 51111
-      DATABASE_URL: postgres://scanner:${POSTGRES_PASSWORD}@postgres:5432/scanner
+      # Use the pre-URL-encoded DATABASE_URL from .env. Do NOT build it from the
+      # raw POSTGRES_PASSWORD here: that password contains a '/', which yields a
+      # "TypeError: Invalid URL" at boot (pg can't parse the unescaped slash).
+      DATABASE_URL: ${DATABASE_URL:?set pre-URL-encoded DATABASE_URL in .env}
       BASE_URL: ${BASE_URL:-https://twDYSCAN.YHW.EDU.PL}
       AUTHENTIK_ISSUER_BASE_URL: ${AUTHENTIK_ISSUER_BASE_URL:-}
       AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:-}

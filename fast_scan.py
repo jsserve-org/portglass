@@ -20,6 +20,7 @@ import asyncio
 import csv
 import ipaddress
 import contextlib
+import itertools
 import os
 import queue
 import random
@@ -773,6 +774,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
     p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
     p.add_argument("--run-id", type=int, default=None, help="Existing scan_runs id to use (skip INSERT)")
+    p.add_argument("--resume-offset", type=int, default=0, help="Skip the first N targets when resuming an interrupted scan so it continues instead of restarting (deterministic order only; ignored for --stealth/--discover)")
     p.add_argument("--proxy", default=os.environ.get("SCAN_PROXY"), help="SOCKS5 proxy host:port (also SCAN_PROXY env var)")
     p.add_argument("--discover", action="store_true", help="Quickly discover alive hosts first, then full-scan only those")
     p.add_argument("--discover-ports", default="22,80,443,445,3389", help="Ports used for host discovery (default: 22,80,443,445,3389)")
@@ -944,8 +946,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         total = sum(1 for _ in target_iter())
 
+        # Resume support: when continuing an interrupted run we skip the targets
+        # already covered so we don't redo hours of work. The target order is
+        # only reproducible for a plain scan; --stealth shuffles and --discover
+        # recomputes the alive set, so we can't offset those (full re-scan, which
+        # is still idempotent). attempted is pre-seeded so progress/% continue.
+        resume_offset = 0
+        if args.resume_offset > 0 and not args.stealth and not args.discover:
+            resume_offset = min(args.resume_offset, total)
+        if resume_offset > 0:
+            print(f"Resuming: skipping {resume_offset:,}/{total:,} already-scanned targets", file=sys.stderr)
+
         batches: "queue.Queue[list[tuple[str, int]] | None]" = queue.Queue(maxsize=args.threads * 4)
-        stats: dict = {"attempted": 0, "open": 0, "current_ip": None}
+        stats: dict = {"attempted": resume_offset, "open": 0, "current_ip": None}
         stats_lock = threading.Lock()
         csv_lock = threading.Lock()
         stop_progress = threading.Event()
@@ -985,7 +998,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 t.start()
 
             try:
-                for batch in chunked(target_iter(), args.batch_size):
+                feed = target_iter()
+                if resume_offset > 0:
+                    feed = itertools.islice(feed, resume_offset, None)
+                for batch in chunked(feed, args.batch_size):
                     batches.put(batch)
                 for _ in workers:
                     batches.put(None)

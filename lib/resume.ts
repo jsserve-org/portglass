@@ -1,43 +1,89 @@
 import { db } from '@/lib/db';
 import { scanRuns } from '@/lib/schema';
-import { isNull, sql } from 'drizzle-orm';
+import { isNull, eq, sql } from 'drizzle-orm';
+import { launchScanner } from '@/lib/scanner';
+
+// Only resume scans that were genuinely alive when the container went down,
+// i.e. heartbeated within this window. Anything older was already dead/stalled
+// before the restart, so we finalize it instead of reviving a zombie (which is
+// what used to pile up into a stampede).
+const RESUMABLE_HEARTBEAT_MS = 10 * 60 * 1000;
+// Redo a little overlap before the last recorded progress, since targets that
+// were in flight when the scanner died may not have completed.
+const RESUME_MARGIN = 2000;
+// Stagger resumes so we don't spawn every scanner in the same instant.
+const RESUME_STAGGER_MS = 1500;
+
+async function finalizeInterrupted(id: number): Promise<void> {
+  await db
+    .update(scanRuns)
+    .set({
+      finishedAt: new Date(),
+      scannerPid: null,
+      currentIp: null,
+      notes: sql`concat(coalesce(${scanRuns.notes}, ''), ' [Interrupted by restart]')`,
+    })
+    .where(eq(scanRuns.id, id))
+    .catch((e) => console.error(`Failed to finalize run_id=${id}`, e));
+}
 
 /**
- * On server startup, reconcile scans that never recorded finished_at.
+ * On startup, reconcile scans with no finished_at (orphaned by the previous
+ * container instance — in this single-container setup a restart kills the whole
+ * tree, so none are actually running now).
  *
- * In this single-container Docker deployment, a restart/reboot kills the whole
- * process tree (tini is pid 1), so ANY scan still marked unfinished was orphaned
- * by the previous container instance — none can actually be running now. The
- * old code tried to detect "still alive" scanners by pid and to auto-resume the
- * rest, but:
- *   - pids are meaningless across a restart (the namespace resets; node is
- *     always pid 7), so the check produced false "still alive" matches via pid
- *     reuse and left runs stuck "Active" forever; and
- *   - blindly relaunching every unfinished scan at boot spawned a stampede of
- *     fast_scan.py processes that overwhelmed the small host.
- *
- * So we simply finalize every orphan as interrupted. Findings already collected
- * are preserved (they're committed as the scan runs); the user can re-scan a
- * range from the UI if they want it continued. This makes startup cheap and
- * keeps run status honest.
+ * Scans that were actively heartbeating when killed are RESUMED and continue
+ * from roughly where they left off (via --resume-offset), so a redeploy doesn't
+ * interrupt or restart them. The resume is serialized/staggered so we never
+ * spawn a stampede. Scans that were already stale, or have no replayable argv,
+ * are finalized as interrupted.
  */
 export async function resumeOrphanedScans(): Promise<void> {
+  let orphans;
   try {
-    const result = await db
-      .update(scanRuns)
-      .set({
-        finishedAt: new Date(),
-        scannerPid: null,
-        currentIp: null,
-        notes: sql`concat(coalesce(${scanRuns.notes}, ''), ' [Interrupted by restart]')`,
-      })
-      .where(isNull(scanRuns.finishedAt))
-      .returning({ id: scanRuns.id });
-
-    if (result.length) {
-      console.log(`Finalized ${result.length} interrupted scan(s): ${result.map((r) => r.id).join(', ')}`);
-    }
+    orphans = await db.select().from(scanRuns).where(isNull(scanRuns.finishedAt));
   } catch (err) {
-    console.error('resumeOrphanedScans: failed to reconcile unfinished runs', err);
+    console.error('resumeOrphanedScans: failed to query unfinished runs', err);
+    return;
+  }
+
+  const now = Date.now();
+  const toResume: { id: number; args: string[] }[] = [];
+
+  for (const run of orphans) {
+    let args: string[] | null = null;
+    if (run.scanArgs) {
+      try {
+        const parsed = JSON.parse(run.scanArgs);
+        if (Array.isArray(parsed) && parsed.length > 0) args = parsed as string[];
+      } catch {
+        /* not replayable */
+      }
+    }
+
+    const beat = run.progressAt ? new Date(run.progressAt).getTime() : 0;
+    const wasAlive = beat > 0 && now - beat < RESUMABLE_HEARTBEAT_MS;
+
+    if (!args || !wasAlive) {
+      await finalizeInterrupted(run.id);
+      console.log(`run_id=${run.id} finalized (${!args ? 'no args' : 'stale heartbeat'})`);
+      continue;
+    }
+
+    // Continue from where it left off when the order is reproducible.
+    const stealthOrDiscover = args.includes('--stealth') || args.includes('--discover');
+    const offset = stealthOrDiscover ? 0 : Math.max(0, (run.attemptedTargets ?? 0) - RESUME_MARGIN);
+    const resumeArgs = offset > 0 ? [...args, '--resume-offset', String(offset)] : args;
+    toResume.push({ id: run.id, args: resumeArgs });
+  }
+
+  // Launch serially with a stagger so a redeploy doesn't spike CPU/RAM.
+  for (let i = 0; i < toResume.length; i++) {
+    const { id, args } = toResume[i];
+    console.log(`Resuming scan run_id=${id} (continue)`);
+    launchScanner(id, args, { ...process.env } as NodeJS.ProcessEnv);
+    if (i < toResume.length - 1) {
+      await new Promise((r) => setTimeout(r, RESUME_STAGGER_MS));
+    }
   }
 }

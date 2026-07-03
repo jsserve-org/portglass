@@ -259,18 +259,18 @@ function DashboardInner() {
                   <button
                     type="button"
                     className="results-export"
-                    title="Download these results as JSON"
-                    onClick={() => downloadText('portglass-results.json', JSON.stringify(rows, null, 2), 'application/json')}
+                    title="Download the current page as JSON"
+                    onClick={() => downloadText('portglass-page.json', JSON.stringify(rows, null, 2), 'application/json')}
                   >
-                    <Download size={13} /> JSON
+                    <Download size={13} /> Page JSON
                   </button>
                   <button
                     type="button"
                     className="results-export"
-                    title="Download these results as CSV"
+                    title="Download the current page as CSV"
                     onClick={() =>
                       downloadText(
-                        'portglass-results.csv',
+                        'portglass-page.csv',
                         toCsv(
                           rows.map((r) => ({
                             ip: r.ip,
@@ -288,10 +288,17 @@ function DashboardInner() {
                       )
                     }
                   >
-                    <Download size={13} /> CSV
+                    <Download size={13} /> Page CSV
                   </button>
                 </>
               )}
+              {/* Full dump of every finding, streamed from the server. */}
+              <a className="results-export results-export-all" href="/api/export?format=json" title="Download ALL findings as JSON">
+                <Download size={13} /> All JSON
+              </a>
+              <a className="results-export results-export-all" href="/api/export?format=csv" title="Download ALL findings as CSV">
+                <Download size={13} /> All CSV
+              </a>
               <Activity size={13} />
               Auto-refresh on
             </span>

@@ -430,6 +430,11 @@ body::before {
 .results-export:hover { color: var(--beam); border-color: var(--beam); }
 .results-export svg { color: var(--text-muted); }
 .results-export:hover svg { color: var(--beam); }
+a.results-export { text-decoration: none; }
+.results-export-all { color: var(--signal); border-color: rgba(52, 224, 126, 0.35); }
+.results-export-all svg { color: var(--signal); }
+.results-export-all:hover { color: var(--signal); border-color: var(--signal); }
+.results-export-all:hover svg { color: var(--signal); }
 
 /* ============ Host Cards ============ */
 .results-list { display: flex; flex-direction: column; gap: 12px; }

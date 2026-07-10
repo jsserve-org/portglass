@@ -15,6 +15,8 @@ import {
   Radio,
   Search,
   Server,
+  Shield,
+  ShieldOff,
   Wifi,
   Zap,
   Trophy,
@@ -89,12 +91,18 @@ function DashboardInner() {
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
   const [page, setPage] = React.useState(1);
+  // Fortinet appliances flood some networks; hide them from results by default.
+  const [hideFortinet, setHideFortinet] = React.useState(true);
   const pageSize = 25;
   const live = useScansWs(['runs']);
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set('q', q);
   if (port) params.set('port', port);
+  params.set('hideFortinet', hideFortinet ? '1' : '0');
+
+  // Keep the full-export links in sync with the on-screen filter.
+  const exportSuffix = hideFortinet ? '' : '&fortinet=include';
 
   const stats = useQuery({
     queryKey: ['stats'],
@@ -103,7 +111,7 @@ function DashboardInner() {
   });
 
   const findings = useQuery({
-    queryKey: ['findings', q, port, page],
+    queryKey: ['findings', q, port, page, hideFortinet],
     queryFn: () => api<{ rows: Finding[]; total: number }>(`/api/findings?${params}`),
     refetchInterval: 10000,
   });
@@ -254,6 +262,16 @@ function DashboardInner() {
               Showing <b>{rows.length ? `${start}–${end}` : '0'}</b> of <b>{total.toLocaleString()}</b> results
             </span>
             <span className="results-refresh">
+              <button
+                type="button"
+                className={`results-export fortinet-toggle ${hideFortinet ? 'active' : ''}`}
+                title={hideFortinet ? 'Fortinet devices are hidden — click to show them' : 'Fortinet devices are shown — click to hide them'}
+                aria-pressed={hideFortinet}
+                onClick={() => { setHideFortinet((v) => !v); setPage(1); }}
+              >
+                {hideFortinet ? <ShieldOff size={13} /> : <Shield size={13} />}
+                {hideFortinet ? 'Fortinet hidden' : 'Fortinet shown'}
+              </button>
               {rows.length > 0 && (
                 <>
                   <button
@@ -293,10 +311,10 @@ function DashboardInner() {
                 </>
               )}
               {/* Full dump of every finding, streamed from the server. */}
-              <a className="results-export results-export-all" href="/api/export?format=json" title="Download ALL findings as JSON">
+              <a className="results-export results-export-all" href={`/api/export?format=json${exportSuffix}`} title="Download ALL findings as JSON">
                 <Download size={13} /> All JSON
               </a>
-              <a className="results-export results-export-all" href="/api/export?format=csv" title="Download ALL findings as CSV">
+              <a className="results-export results-export-all" href={`/api/export?format=csv${exportSuffix}`} title="Download ALL findings as CSV">
                 <Download size={13} /> All CSV
               </a>
               <Activity size={13} />

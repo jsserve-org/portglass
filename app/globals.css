@@ -436,6 +436,12 @@ a.results-export { text-decoration: none; }
 .results-export-all:hover { color: var(--signal); border-color: var(--signal); }
 .results-export-all:hover svg { color: var(--signal); }
 
+/* Fortinet filter toggle: amber when active (hiding), muted when off (showing). */
+.fortinet-toggle.active { color: var(--warn, #f5a623); border-color: rgba(245, 166, 35, 0.4); }
+.fortinet-toggle.active svg { color: var(--warn, #f5a623); }
+.fortinet-toggle.active:hover { color: var(--warn, #f5a623); border-color: var(--warn, #f5a623); }
+.fortinet-toggle.active:hover svg { color: var(--warn, #f5a623); }
+
 /* ============ Host Cards ============ */
 .results-list { display: flex; flex-direction: column; gap: 12px; }
 

@@ -230,6 +230,31 @@ class Finding:
     product: str = ""
 
 
+# "Junk" findings we never store: Fortinet appliance noise and a few ports that
+# only ever surface junk on the networks we scan. Kept in sync with the app-side
+# copy in lib/junk.ts (JUNK_SIGNATURES / JUNK_PORTS). Dropped at insert time so
+# they never accumulate; the DB is also purged of any that got in before.
+JUNK_SIGNATURES = (
+    "fortinet",
+    "fortigate",
+    "fortios",
+    "forticlient",
+    "fortimanager",
+    "fortiweb",
+    "fortiproxy",
+    "svpncookie",
+    "svpnnetworkcookie",
+)
+JUNK_PORTS = frozenset({8008})
+
+
+def is_junk_finding(f: "Finding") -> bool:
+    if f.port in JUNK_PORTS:
+        return True
+    hay = f"{f.banner}\n{f.headers}\n{f.service}\n{f.product}".lower()
+    return any(sig in hay for sig in JUNK_SIGNATURES)
+
+
 class AsyncRateLimiter:
     """Simple per-thread async rate limiter in connection attempts/second."""
 
@@ -677,6 +702,9 @@ def worker(
                     on_attempt=mark_attempt,
                 )
             )
+            # Drop junk (Fortinet noise, junk ports) before it's written or
+            # counted, so it never enters the CSV, the DB, or the open tally.
+            findings = [f for f in findings if not is_junk_finding(f)]
             for finding in findings:
                 writerow_safe(csv_writer, csv_file, csv_lock, finding)
             db_insert_findings(db_conn, db_lock, run_id, findings)

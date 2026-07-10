@@ -4,19 +4,13 @@ import { headers } from 'next/headers';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { cached } from '@/lib/cache';
-import { fortinetMatchSql } from '@/lib/fortinet';
+import { junkMatchSql } from '@/lib/junk';
 
 const querySchema = z.object({
   q: z.string().optional().default(''),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
-  // Hide Fortinet appliances by default; pass hideFortinet=0 to include them.
-  hideFortinet: z
-    .enum(['0', '1', 'true', 'false'])
-    .optional()
-    .default('1')
-    .transform((v) => v === '1' || v === 'true'),
 });
 
 export async function GET(request: Request) {
@@ -30,9 +24,9 @@ export async function GET(request: Request) {
   const offset = (query.page - 1) * query.pageSize;
   const port = query.port ?? null;
   const needle = query.q ? `%${query.q}%` : null;
-  // When hiding Fortinet gear, exclude any row that fingerprints as Fortinet;
-  // otherwise this fragment is a no-op (TRUE) so all rows pass.
-  const fortinetFilter = query.hideFortinet ? sql`NOT ${fortinetMatchSql()}` : sql`TRUE`;
+  // Junk (Fortinet noise, junk ports) is purged from the DB and blocked at scan
+  // time; this is a belt-and-suspenders filter so any stragglers never surface.
+  const notJunk = sql`NOT ${junkMatchSql()}`;
 
   // The search view intentionally returns one card per IP address. If a host
   // has multiple matching open ports, keep the most recently observed finding
@@ -63,7 +57,7 @@ export async function GET(request: Request) {
           observed_at AS "observedAt"
         FROM port_findings
         WHERE (${port}::int IS NULL OR port = ${port})
-          AND ${fortinetFilter}
+          AND ${notJunk}
           AND (
             ${needle}::text IS NULL
             OR ip ILIKE ${needle}
@@ -85,7 +79,7 @@ export async function GET(request: Request) {
     SELECT COUNT(DISTINCT ip)::int AS value
     FROM port_findings
     WHERE (${port}::int IS NULL OR port = ${port})
-      AND ${fortinetFilter}
+      AND ${notJunk}
       AND (
         ${needle}::text IS NULL
         OR ip ILIKE ${needle}
@@ -98,7 +92,7 @@ export async function GET(request: Request) {
 
   // The search view auto-refreshes; identical queries (same filter + page) are
   // common across refreshes/clients. Cache the heavy geo-enriched result 10s.
-  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}:f${query.hideFortinet ? 1 : 0}`;
+  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}`;
   const payload = await cached(cacheKey, 10_000, async () => {
     const [rowsResult, totalRows] = await Promise.all([
       db.execute(rowsQuery),

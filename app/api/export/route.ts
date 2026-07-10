@@ -3,7 +3,7 @@ import { portFindings, scanRuns } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { asc, gt, eq } from 'drizzle-orm';
-import { isFortinet } from '@/lib/fortinet';
+import { isJunk } from '@/lib/junk';
 
 export const runtime = 'nodejs';
 // Never cache a full data dump.
@@ -64,8 +64,6 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const format = url.searchParams.get('format') === 'json' ? 'json' : 'csv';
-  // Fortinet gear is filtered out by default; pass fortinet=include to keep it.
-  const hideFortinet = url.searchParams.get('fortinet') !== 'include';
   const enc = new TextEncoder();
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = `portglass-all-${stamp}.${format}`;
@@ -88,7 +86,7 @@ export async function GET(request: Request) {
         if (rows.length) {
           let chunk = '';
           for (const r of rows) {
-            if (hideFortinet && isFortinet(r)) continue;
+            if (isJunk(r)) continue;
             const rec = toRecord(r);
             if (format === 'json') {
               chunk += (first ? '' : ',') + JSON.stringify(rec);

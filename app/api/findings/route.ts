@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { cached } from '@/lib/cache';
 import { junkMatchSql } from '@/lib/junk';
+import { classifyDevice } from '@/lib/classify';
 
 const querySchema = z.object({
   q: z.string().optional().default(''),
@@ -98,8 +99,41 @@ export async function GET(request: Request) {
       db.execute(rowsQuery),
       db.execute(countQuery),
     ]);
+
+    // The card shows one representative row per IP, but device classification
+    // needs the host's FULL port/banner set. Pull all (non-junk) findings for
+    // just this page's IPs (≤ pageSize hosts) and classify each in JS.
+    const rows = rowsResult.rows as any[];
+    const ips = [...new Set(rows.map((r) => String(r.ip)))];
+    const deviceByIp = new Map<string, ReturnType<typeof classifyDevice>>();
+    if (ips.length) {
+      const agg = await db.execute(sql`
+        SELECT ip::text AS ip, port,
+               service, product,
+               LEFT(COALESCE(banner, ''), 512) AS banner,
+               LEFT(COALESCE(headers, ''), 2048) AS headers
+        FROM port_findings
+        WHERE ip::text = ANY(${ips}) AND ${notJunk}
+      `);
+      const byIp = new Map<string, any[]>();
+      for (const f of agg.rows as any[]) {
+        const list = byIp.get(f.ip) ?? [];
+        list.push(f);
+        byIp.set(f.ip, list);
+      }
+      for (const [ip, list] of byIp) deviceByIp.set(ip, classifyDevice(list));
+    }
+
     return {
-      rows: rowsResult.rows,
+      rows: rows.map((r) => {
+        const d = deviceByIp.get(String(r.ip));
+        return {
+          ...r,
+          device: d && d.type !== 'unknown'
+            ? { type: d.type, label: d.label, confidence: d.confidence }
+            : null,
+        };
+      }),
       total: Number((totalRows.rows[0] as any)?.value ?? 0),
       page: query.page,
       pageSize: query.pageSize,

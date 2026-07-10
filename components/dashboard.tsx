@@ -23,6 +23,7 @@ import TopNav from "./top-nav";
 import HostCard from './host-card';
 import Link from 'next/link';
 import { downloadText, toCsv } from '@/lib/export';
+import type { DeviceType } from '@/lib/classify';
 
 type Finding = {
   id: number;
@@ -40,6 +41,7 @@ type Finding = {
   countryName?: string | null;
   asn?: number | null;
   org?: string | null;
+  device?: { type: DeviceType; label: string; confidence: 'high' | 'medium' | 'low' } | null;
 };
 
 type Stats = {

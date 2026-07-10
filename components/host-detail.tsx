@@ -29,6 +29,8 @@ import ShareButton from "./share-button";
 import { curlFor, looksHttp } from "@/lib/commands";
 import { downloadText, toCsv } from "@/lib/export";
 import { detectTech } from "@/lib/tech";
+import { classifyDevice } from "@/lib/classify";
+import DeviceBadge from "./device-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -162,6 +164,10 @@ function HostDetailInner({ ip }: { ip: string }) {
     [findings]
   );
 
+  // Auto-detected device type (camera / printer / firewall / web / ssh /
+  // windows-RDP / mobile) from this host's ports + banners.
+  const device = useMemo(() => classifyDevice(findings), [findings]);
+
   // curl commands for every HTTP(S) port on this host, for one-click copy.
   const hostCurlSet = useMemo(
     () =>
@@ -221,6 +227,16 @@ function HostDetailInner({ ip }: { ip: string }) {
           <h1 className="break-all font-mono text-[34px] font-semibold leading-none tracking-wide text-foreground">
             {ip}
           </h1>
+          {device.type !== "unknown" && (
+            <div className="mt-1.5">
+              <DeviceBadge
+                type={device.type}
+                label={device.label}
+                confidence={device.confidence}
+                size="lg"
+              />
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap gap-4 font-mono text-xs text-muted-foreground [&_svg]:size-3 [&_svg]:text-[var(--text-dim)]">
             <span className="inline-flex items-center gap-1.5">
               <Radio /> {ports.length} open port{ports.length === 1 ? "" : "s"}

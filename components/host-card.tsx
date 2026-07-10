@@ -5,6 +5,8 @@ import { ChevronDown, ChevronUp, ExternalLink, Terminal, Wifi } from 'lucide-rea
 import Link from 'next/link';
 import CopyButton from './copy-button';
 import { curlFor } from '@/lib/commands';
+import DeviceBadge from './device-badge';
+import type { DeviceType } from '@/lib/classify';
 
 function flagEmoji(iso: string | null): string {
   if (!iso || iso.length !== 2) return '';
@@ -33,6 +35,7 @@ export default function HostCard({
     countryName?: string | null;
     asn?: number | null;
     org?: string | null;
+    device?: { type: DeviceType; label: string; confidence: 'high' | 'medium' | 'low' } | null;
   };
   idx: number;
 }) {
@@ -50,6 +53,9 @@ export default function HostCard({
               <ExternalLink size={12} />
             </Link>
             <div className="host-meta">
+              {f.device && (
+                <DeviceBadge type={f.device.type} label={f.device.label} confidence={f.device.confidence} />
+              )}
               <span className="badge badge-green">OPEN</span>
               <span className="badge badge-cyan">PORT {f.port}</span>
               {f.service && <span className="badge badge-amber">{f.service.toUpperCase()}</span>}

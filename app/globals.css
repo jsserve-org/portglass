@@ -540,6 +540,21 @@ a.results-export { text-decoration: none; }
 .badge-cyan { background: rgba(63, 199, 255, 0.1); color: var(--beam); border-color: rgba(63, 199, 255, 0.25); }
 .badge-slate { background: rgba(130, 141, 157, 0.1); color: var(--text-muted); border-color: var(--border-light); }
 
+/* Auto-detected device type (camera / printer / firewall / …). Colour is set
+   inline per type; here we just define shape and the translucent fill. */
+.device-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-weight: 600; letter-spacing: 0.4px;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.device-badge-sm { font-size: 10px; text-transform: uppercase; }
+.device-badge-lg { font-size: 12px; padding: 5px 12px; }
+.device-badge-q { opacity: 0.7; margin-left: 1px; }
+
 /* ============ Empty / Loading ============ */
 .empty-state {
   display: flex; flex-direction: column; align-items: center; gap: 16px;

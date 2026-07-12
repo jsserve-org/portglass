@@ -6,7 +6,39 @@ import { headers } from 'next/headers';
 import { eq, desc, sql } from 'drizzle-orm';
 import { junkMatchSql } from '@/lib/junk';
 import { deviceTypeCaseSql } from '@/lib/classify-sql';
-import { cached } from '@/lib/cache';
+import { cached, invalidate } from '@/lib/cache';
+
+// PATCH /api/scan/[id] — update a scan's user label/description.
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (authEnabled) {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const { id } = await params;
+  const runId = parseInt(id, 10);
+  if (isNaN(runId)) return NextResponse.json({ error: 'Invalid scan ID' }, { status: 400 });
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
+  const label = String(body.label ?? '').trim().slice(0, 80) || null;
+
+  const [updated] = await db
+    .update(scanRuns)
+    .set({ label })
+    .where(eq(scanRuns.id, runId))
+    .returning({ id: scanRuns.id, label: scanRuns.label });
+  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  // The scans list + this run's detail are cached; drop them so the new label
+  // shows immediately.
+  invalidate('runs');
+  invalidate(`scan-detail:${runId}`);
+  return NextResponse.json({ ok: true, label: updated.label });
+}
 
 function ipCountFromCidr(cidr: string): number {
   try {

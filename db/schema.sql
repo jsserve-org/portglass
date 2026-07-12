@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS scan_runs (
   scanner_version TEXT NOT NULL DEFAULT 'fast_scan.py',
   scanner_pid INTEGER,
   scan_args TEXT,
-  notes TEXT
+  notes TEXT,
+  label TEXT
 );
 
 CREATE TABLE IF NOT EXISTS port_findings (

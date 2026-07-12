@@ -1,11 +1,9 @@
 import { db } from '@/lib/db';
 import { scanRuns, portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
-import { desc, eq, count, inArray, sql } from 'drizzle-orm';
+import { desc, eq, count, inArray } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { cached } from '@/lib/cache';
-import { junkMatchSql, sqlArray } from '@/lib/junk';
-import { deviceTypeCaseSql } from '@/lib/classify-sql';
 
 function ipCountFromCidr(cidr: string): number {
   try {
@@ -30,39 +28,20 @@ export async function GET() {
   // Cache the raw DB reads briefly. The scans list / WebSocket poll this every
   // ~2s per client; a 1.5s TTL keeps it feeling live while collapsing bursts of
   // identical reads (across clients) into a single query.
-  const { runs, countMap, deviceMap } = await cached('runs:list', 1500, async () => {
+  const { runs, countMap } = await cached('runs:list', 1500, async () => {
     const runs = await db.select().from(scanRuns).orderBy(desc(scanRuns.startedAt)).limit(100);
     const countMap: Record<number, number> = {};
-    const deviceMap: Record<number, { device_type: string; count: number }[]> = {};
     if (runs.length) {
-      const runIds = runs.map((r) => r.id);
       const counts = await db
         .select({ runId: portFindings.runId, cnt: count() })
         .from(portFindings)
-        .where(inArray(portFindings.runId, runIds))
+        .where(inArray(portFindings.runId, runs.map((r) => r.id)))
         .groupBy(portFindings.runId);
       for (const row of counts) {
         if (row.runId != null) countMap[row.runId] = Number(row.cnt);
       }
-      // Per-run device-type breakdown (one grouped pass over these runs' hosts).
-      const devRows = await db.execute(sql`
-        SELECT run_id AS "runId", device_type, COUNT(*)::int AS count
-        FROM (
-          SELECT run_id, ip, ${deviceTypeCaseSql()} AS device_type
-          FROM port_findings
-          WHERE run_id = ANY(${sqlArray(runIds)}::int[]) AND NOT ${junkMatchSql()}
-          GROUP BY run_id, ip
-        ) t
-        WHERE device_type <> 'unknown'
-        GROUP BY run_id, device_type
-        ORDER BY count DESC
-      `);
-      for (const r of devRows.rows as any[]) {
-        const id = Number(r.runId);
-        (deviceMap[id] ??= []).push({ device_type: r.device_type, count: Number(r.count) });
-      }
     }
-    return { runs, countMap, deviceMap };
+    return { runs, countMap };
   });
 
   if (runs.length === 0) {
@@ -125,7 +104,6 @@ export async function GET() {
     return {
       ...run,
       findingsCount,
-      deviceCounts: deviceMap[run.id] ?? [],
       // A queued run hasn't started; don't tick elapsed or show progress.
       elapsedSec: run.queued ? 0 : elapsedSec,
       etaSec,

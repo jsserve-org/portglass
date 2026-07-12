@@ -39,6 +39,7 @@ type Finding = {
 type ScanRun = {
   id: number;
   cidr: string;
+  label: string | null;
   ports: string;
   startedAt: string;
   finishedAt: string | null;
@@ -95,6 +96,9 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
   const [killing, setKilling] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
+  const [savingLabel, setSavingLabel] = useState(false);
 
   // Live scan detail (progress, current IP, findings) over WebSocket; fall back
   // to REST polling when the socket is down or proxy-blocked.
@@ -190,6 +194,25 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const comp = summary.data?.computed;
   const ai = summary.data?.ai;
 
+  const saveLabel = async () => {
+    setSavingLabel(true);
+    try {
+      const res = await fetch(`/api/scan/${runId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ label: labelDraft.trim() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await scan.refetch();
+      setEditingLabel(false);
+    } catch {
+      /* leave the editor open so the user can retry */
+    } finally {
+      setSavingLabel(false);
+    }
+  };
+
   const forceKillScan = async () => {
     if (!window.confirm("Force kill this port scan? Any partial findings already saved will remain.")) return;
     setKilling(true);
@@ -214,8 +237,35 @@ function ScanDetailInner({ runId }: { runId: string }) {
           <div className="scan-meta-row">
             <h1>
               <MapPin size={18} />
-              Scan {run.cidr}
+              {run.label || `Scan ${run.cidr}`}
             </h1>
+            {editingLabel ? (
+              <span className="scan-label-edit">
+                <input
+                  className="scan-label-input"
+                  value={labelDraft}
+                  autoFocus
+                  maxLength={80}
+                  placeholder="Label / description"
+                  onChange={(e) => setLabelDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveLabel();
+                    if (e.key === "Escape") setEditingLabel(false);
+                  }}
+                />
+                <button className="scan-label-btn" onClick={saveLabel} disabled={savingLabel}>
+                  {savingLabel ? "…" : "Save"}
+                </button>
+                <button className="scan-label-btn ghost" onClick={() => setEditingLabel(false)}>Cancel</button>
+              </span>
+            ) : (
+              <button
+                className="scan-label-btn ghost"
+                onClick={() => { setLabelDraft(run.label || ""); setEditingLabel(true); }}
+              >
+                {run.label ? "Edit label" : "Add label"}
+              </button>
+            )}
             {isActive && (
               <span className="scan-active-badge">
                 <span className="scan-pulse" />
@@ -239,6 +289,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
             )}
           </div>
           <div className="scan-meta-bar">
+            <span><MapPin size={12} /> {run.cidr}</span>
             <span><Clock size={12} /> Started {new Date(run.startedAt).toLocaleString()}</span>
             {run.finishedAt && <span><Clock size={12} /> Finished {new Date(run.finishedAt).toLocaleString()}</span>}
             {comp?.duration && <span><Zap size={12} /> Duration {comp.duration}s</span>}

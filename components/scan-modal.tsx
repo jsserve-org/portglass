@@ -60,6 +60,7 @@ function OptionRow({
 
 export default function ScanModal({ onClose, onStarted }: { onClose: () => void; onStarted: () => void }) {
   const [cidr, setCidr] = useState("");
+  const [label, setLabel] = useState("");
   const [preset, setPreset] = useState("common");
   const [customPorts, setCustomPorts] = useState("");
   const [threads, setThreads] = useState(2);
@@ -113,6 +114,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
         credentials: "include",
         body: JSON.stringify({
           cidr: cidr.trim(),
+          label: label.trim() || undefined,
           ports: portsValue,
           threads,
           concurrency,
@@ -157,6 +159,15 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               onChange={(e) => setCidr(e.target.value)}
               placeholder="192.168.0.0/24"
               required
+            />
+
+            <label className="modal-label">Label <span className="modal-optional">(optional)</span></label>
+            <input
+              className="modal-input"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. HQ external range"
+              maxLength={80}
             />
 
             <label className="modal-label">Ports</label>

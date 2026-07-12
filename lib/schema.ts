@@ -12,6 +12,9 @@ export const scanRuns = pgTable('scan_runs', {
   // replayed verbatim by the resume-on-boot reconciler.
   scanArgs: text('scan_args'),
   notes: text('notes'),
+  // Optional human-readable name/description for the scan (user-set), e.g.
+  // "HQ external range". Shown on the scans list + detail.
+  label: text('label'),
   // Live progress, written periodically by the scanner. progressAt doubles as a
   // heartbeat: a run with no finishedAt whose progressAt is stale is treated as
   // dead (the scanner died) rather than "running forever".

@@ -46,6 +46,7 @@ export async function POST(request: Request) {
   }
 
   const ports = String(body.ports ?? 'common').trim();
+  const label = String(body.label ?? '').trim().slice(0, 80) || null;
   const deep = !!body.deep;
   // Defaults are deliberately gentle: this app commonly runs on a small host
   // shared with other services, so a scan must not monopolise it. The scanner
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
     .insert(scanRuns)
     .values({
       cidr,
+      label,
       ports,
       startedAt: new Date(),
       scannerVersion: 'fast_scan.py',

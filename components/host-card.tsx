@@ -36,11 +36,14 @@ export default function HostCard({
     asn?: number | null;
     org?: string | null;
     device?: { type: DeviceType; label: string; confidence?: 'high' | 'medium' | 'low' } | null;
+    ports?: { port: number; service: string | null }[];
   };
   idx: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = !!(f.banner || f.headers);
+  // Every open port on this host (falls back to the representative port).
+  const ports = f.ports?.length ? f.ports : [{ port: f.port, service: f.service }];
 
   return (
     <article className="host-card">
@@ -56,10 +59,6 @@ export default function HostCard({
               {f.device && (
                 <DeviceBadge type={f.device.type} label={f.device.label} confidence={f.device.confidence} />
               )}
-              <span className="badge badge-green">OPEN</span>
-              <span className="badge badge-cyan">PORT {f.port}</span>
-              {f.service && <span className="badge badge-amber">{f.service.toUpperCase()}</span>}
-              {f.product && <span className="badge badge-slate">{f.product}</span>}
               {f.countryIso && (
                 <span className="badge badge-slate" title={f.countryName || ''}>
                   {flagEmoji(f.countryIso)} {f.countryIso}
@@ -84,6 +83,21 @@ export default function HostCard({
             })}
           </span>
         </div>
+      </div>
+
+      <div className="port-strip">
+        <span className="badge badge-green">{ports.length} OPEN</span>
+        {ports.map((p) => (
+          <Link
+            key={p.port}
+            href={`/host/${encodeURIComponent(f.ip)}`}
+            className="port-pill"
+            title={p.service ? `${p.port} · ${p.service}` : `Port ${p.port}`}
+          >
+            {p.port}
+            {p.service && <span className="port-pill-svc">{p.service}</span>}
+          </Link>
+        ))}
       </div>
 
       <div className="card-actions">

@@ -21,6 +21,8 @@ import {
   } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
+import DeviceBadge, { DEVICE_COLORS } from "./device-badge";
+import { deviceLabel, type DeviceType } from "@/lib/classify";
 
 type Finding = {
   id: number;
@@ -102,7 +104,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/scan/${runId}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ run: ScanRun; geo?: Geo; findings: Finding[]; stats: any }>;
+      return res.json() as Promise<{ run: ScanRun; geo?: Geo; findings: Finding[]; stats: any; deviceCounts?: { device_type: DeviceType; count: number }[] }>;
     },
     refetchInterval: live ? false : 5000,
   });
@@ -120,6 +122,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
   const geo = scan.data?.geo;
   const findings = scan.data?.findings ?? [];
   const stats = scan.data?.stats;
+  const deviceCounts = scan.data?.deviceCounts ?? [];
 
   // A live scan heartbeats progress_at every few seconds. Treat an unfinished
   // run whose heartbeat has gone quiet as stalled (scanner died) rather than
@@ -336,6 +339,35 @@ function ScanDetailInner({ runId }: { runId: string }) {
             </div>
           </div>
         )}
+
+        {deviceCounts.length > 0 && (() => {
+          const total = deviceCounts.reduce((a, d) => a + d.count, 0);
+          return (
+            <div className="scan-devices">
+              <h3><Server size={14} /> Device types in this scan</h3>
+              <div className="scan-devices-bar">
+                {deviceCounts.map((d) => (
+                  <Link
+                    key={d.device_type}
+                    href={`/?device=${d.device_type}`}
+                    className="scan-devices-seg"
+                    style={{ flexGrow: d.count, background: DEVICE_COLORS[d.device_type] }}
+                    title={`${deviceLabel(d.device_type)} — ${d.count}`}
+                  />
+                ))}
+              </div>
+              <div className="scan-devices-legend">
+                {deviceCounts.map((d) => (
+                  <Link key={d.device_type} href={`/?device=${d.device_type}`} className="scan-devices-item">
+                    <DeviceBadge type={d.device_type} label={deviceLabel(d.device_type)} />
+                    <span className="scan-devices-count">{d.count}</span>
+                    <span className="scan-devices-pct">{Math.round((d.count / total) * 100)}%</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {ai && (
           <div className="scan-ai-summary">

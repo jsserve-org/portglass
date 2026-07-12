@@ -12,9 +12,21 @@ const queryClient = makeQueryClient();
 
 // Order + one-line description per device type, shown as the tile subtitle.
 const CATALOG: { type: DeviceType; blurb: string }[] = [
+  { type: "ipmi", blurb: "IPMI / iDRAC / iLO out-of-band management" },
+  { type: "hypervisor", blurb: "ESXi, Proxmox and other hypervisors" },
   { type: "camera", blurb: "RTSP / ONVIF streams, NVRs and IP cameras" },
   { type: "printer", blurb: "JetDirect, IPP and LPD print services" },
+  { type: "voip", blurb: "SIP / PBX and VoIP endpoints" },
+  { type: "game-server", blurb: "Minecraft, Source and other game hosts" },
+  { type: "media-server", blurb: "Plex, Jellyfin, DLNA and streaming" },
+  { type: "nas", blurb: "Synology, QNAP, TrueNAS and network storage" },
+  { type: "database", blurb: "MySQL, Postgres, MongoDB, Redis and more" },
+  { type: "mail-server", blurb: "SMTP / IMAP / POP3 mail services" },
+  { type: "dns-server", blurb: "Authoritative and resolver DNS" },
+  { type: "router", blurb: "Home / edge routers and CPE gateways" },
   { type: "firewall", blurb: "Firewalls, gateways and VPN appliances" },
+  { type: "load-balancer", blurb: "HAProxy, F5, Envoy and traffic managers" },
+  { type: "iot", blurb: "MQTT, smart-home hubs and IoT devices" },
   { type: "windows-server", blurb: "Windows hosts exposing RDP / SMB" },
   { type: "mobile", blurb: "Phones & tablets (iOS lockdownd, Android ADB)" },
   { type: "ssh-server", blurb: "SSH / remote-shell endpoints" },

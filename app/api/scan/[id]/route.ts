@@ -4,6 +4,8 @@ import { scanRuns, portFindings } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { eq, desc, sql } from 'drizzle-orm';
+import { junkMatchSql } from '@/lib/junk';
+import { deviceTypeCaseSql } from '@/lib/classify-sql';
 
 function ipCountFromCidr(cidr: string): number {
   try {
@@ -78,6 +80,27 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     // geo tables may be empty/unavailable; header simply omits the badges
   }
 
+  // Per-scan device-type breakdown: classify only THIS run's hosts (a host may
+  // appear in other scans too) with the shared SQL classifier.
+  let deviceCounts: { device_type: string; count: number }[] = [];
+  try {
+    const dc = await db.execute(sql`
+      SELECT device_type, COUNT(*)::int AS count
+      FROM (
+        SELECT ip, ${deviceTypeCaseSql()} AS device_type
+        FROM port_findings
+        WHERE run_id = ${runId} AND NOT ${junkMatchSql()}
+        GROUP BY ip
+      ) t
+      WHERE device_type <> 'unknown'
+      GROUP BY device_type
+      ORDER BY count DESC
+    `);
+    deviceCounts = dc.rows as { device_type: string; count: number }[];
+  } catch {
+    // classifier tables/regex issues should never break the scan page
+  }
+
   const runData = run[0];
   const totalHosts = ipCountFromCidr(runData.cidr);
   const portsCount = runData.ports.split(',').length;
@@ -92,6 +115,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     run: runData,
     geo,
     findings,
+    deviceCounts,
     stats: {
       totalFindings: findings.length,
       hosts: hostCount,

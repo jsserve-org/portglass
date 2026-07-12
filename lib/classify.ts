@@ -4,11 +4,26 @@
 // (host detail). Scoring: each category accrues weight from matching port and
 // text signals; the highest-scoring category wins (ties broken by the order
 // below, most-specific first), falling back to "unknown" when nothing matches.
+//
+// Keep the category order + signals in sync with lib/classify-sql.ts, which
+// mirrors this in SQL for dataset-wide filtering/counting.
 
 export type DeviceType =
+  | 'ipmi'
+  | 'hypervisor'
   | 'camera'
   | 'printer'
+  | 'voip'
+  | 'game-server'
+  | 'media-server'
+  | 'nas'
+  | 'database'
+  | 'mail-server'
+  | 'dns-server'
+  | 'router'
   | 'firewall'
+  | 'load-balancer'
+  | 'iot'
   | 'windows-server'
   | 'mobile'
   | 'ssh-server'
@@ -41,14 +56,28 @@ type Category = {
   textWeight?: number;
 };
 
-// Order matters: earlier = more specific, wins ties. Generic web/ssh servers
-// sit last so a camera/printer/firewall that also serves HTTP is labelled by
-// what it actually is.
+// Order matters: earlier = more specific, wins ties. Role-based types (camera,
+// database, mail, …) sit ahead of generic OS/ssh/web so a box is labelled by
+// what it does, not just that it answers HTTP or RDP.
 const CATEGORIES: Category[] = [
+  {
+    type: 'ipmi',
+    label: 'Mgmt / IPMI',
+    ports: { 623: 4, 16992: 3, 16993: 3 },
+    text: /\bipmi\b|idrac|\bilo\b|integrated lights-?out|supermicro|\bbmc\b|intel\s?amt|redfish|\bcimc\b|\bdrac\b|baseboard management/i,
+    textWeight: 3,
+  },
+  {
+    type: 'hypervisor',
+    label: 'Hypervisor',
+    ports: { 8006: 4, 902: 3, 903: 2, 16509: 3 },
+    text: /vmware|esxi|vsphere|proxmox|hyper-?v|xenserver|citrix hypervisor|\bkvm\b|libvirt|ovirt|nutanix|\bqemu\b/i,
+    textWeight: 3,
+  },
   {
     type: 'camera',
     label: 'IP Camera',
-    ports: { 554: 3, 8554: 2, 37777: 3, 37778: 2, 34567: 2, 8000: 1, 88: 1 },
+    ports: { 554: 3, 8554: 2, 37777: 3, 37778: 2, 34567: 2 },
     text: /rtsp|hikvision|dahua|\baxis\b|onvif|ip ?camera|ipcam|webcam|netcam|network camera|goahead|dvrdvs|\bnvr\b|\bdvr\b|vivotek|foscam|reolink|uniview/i,
     textWeight: 3,
   },
@@ -60,10 +89,80 @@ const CATEGORIES: Category[] = [
     textWeight: 3,
   },
   {
+    type: 'voip',
+    label: 'VoIP / SIP',
+    ports: { 5060: 3, 5061: 3, 2000: 1 },
+    text: /sip\/2\.0|asterisk|freeswitch|\bvoip\b|call ?manager|\bsccp\b|\b3cx\b|freepbx|kamailio|opensips|polycom|yealink|grandstream/i,
+    textWeight: 3,
+  },
+  {
+    type: 'game-server',
+    label: 'Game Server',
+    ports: { 25565: 3, 19132: 2, 27015: 3, 7777: 1, 28015: 1 },
+    text: /minecraft|counter-strike|source engine|\bvalve\b|garry'?s mod|\bgmod\b|rust server|\bark\b|terraria|factorio|fivem|\bsamp\b|teamspeak|steam/i,
+    textWeight: 3,
+  },
+  {
+    type: 'media-server',
+    label: 'Media Server',
+    ports: { 32400: 4, 8096: 3, 8920: 2 },
+    text: /plex|jellyfin|\bemby\b|\bkodi\b|dlna|mediaserver|serviio|airplay|chromecast|\broku\b|\bsonos\b/i,
+    textWeight: 3,
+  },
+  {
+    type: 'nas',
+    label: 'NAS / Storage',
+    ports: { 5000: 2, 5001: 2, 548: 2, 2049: 2, 873: 2 },
+    text: /synology|diskstation|\bqnap\b|truenas|freenas|netapp|openmediavault|\bnas\b|\bdsm\b|\bdrobo\b|wd my cloud|buffalo|unraid/i,
+    textWeight: 3,
+  },
+  {
+    type: 'database',
+    label: 'Database',
+    ports: { 3306: 3, 5432: 3, 1433: 3, 1521: 3, 27017: 3, 6379: 2, 9042: 2, 5984: 2, 11211: 2, 8123: 1 },
+    text: /mysql|mariadb|postgresql|postgres|mongodb|\bredis\b|sql server|\boracle\b|cassandra|couchdb|memcached|clickhouse|elasticsearch|influxdb/i,
+    textWeight: 3,
+  },
+  {
+    type: 'mail-server',
+    label: 'Mail Server',
+    ports: { 25: 3, 465: 3, 587: 3, 110: 2, 143: 2, 993: 2, 995: 2 },
+    text: /\bsmtp\b|esmtp|postfix|\bexim\b|sendmail|dovecot|\bimap\b|\bpop3\b|zimbra|exchange|courier|\bqmail\b|mail server/i,
+    textWeight: 3,
+  },
+  {
+    type: 'dns-server',
+    label: 'DNS Server',
+    ports: { 53: 4 },
+    text: /\bbind\b|\bnamed\b|dnsmasq|powerdns|unbound|\bdns\b|domain name/i,
+    textWeight: 2,
+  },
+  {
+    type: 'router',
+    label: 'Router / Gateway',
+    ports: { 7547: 3, 1900: 1 },
+    text: /openwrt|dd-wrt|\brouter\b|residential gateway|\bcpe\b|tp-?link|d-?link|netgear|asuswrt|\bzte\b|home gateway|dsl|broadband/i,
+    textWeight: 3,
+  },
+  {
     type: 'firewall',
-    label: 'Firewall / Gateway',
+    label: 'Firewall',
     ports: { 500: 1, 4500: 1, 4443: 1 },
     text: /pfsense|sonicwall|cisco adaptive security|\basa\b|pan-os|palo alto|globalprotect|checkpoint|check point|watchguard|\bsophos\b|mikrotik|routeros|opnsense|\bfirewall\b|juniper|junos|zyxel|draytek/i,
+    textWeight: 3,
+  },
+  {
+    type: 'load-balancer',
+    label: 'Load Balancer',
+    ports: {},
+    text: /haproxy|\bf5\b|big-?ip|nginx plus|traefik|\benvoy\b|netscaler|\bkemp\b|\ba10\b|load ?balancer|\bvarnish\b/i,
+    textWeight: 3,
+  },
+  {
+    type: 'iot',
+    label: 'IoT / Smart Home',
+    ports: { 1883: 3, 8883: 2, 5683: 2, 8123: 2 },
+    text: /\bmqtt\b|home assistant|tasmota|shelly|sonoff|espressif|esp8266|esp32|\btuya\b|smartthings|\bhue\b|homekit|\bcoap\b|zigbee|z-wave/i,
     textWeight: 3,
   },
   {
@@ -97,15 +196,30 @@ const CATEGORIES: Category[] = [
 ];
 
 const LABELS: Record<DeviceType, string> = {
+  ipmi: 'Mgmt / IPMI',
+  hypervisor: 'Hypervisor',
   camera: 'IP Camera',
   printer: 'Printer',
-  firewall: 'Firewall / Gateway',
+  voip: 'VoIP / SIP',
+  'game-server': 'Game Server',
+  'media-server': 'Media Server',
+  nas: 'NAS / Storage',
+  database: 'Database',
+  'mail-server': 'Mail Server',
+  'dns-server': 'DNS Server',
+  router: 'Router / Gateway',
+  firewall: 'Firewall',
+  'load-balancer': 'Load Balancer',
+  iot: 'IoT / Smart Home',
   'windows-server': 'Windows (RDP)',
   mobile: 'Mobile Device',
   'ssh-server': 'SSH Server',
   'web-server': 'Web Server',
   unknown: 'Unknown',
 };
+
+// The canonical display order (most-specific first), for filters and overviews.
+export const DEVICE_ORDER: DeviceType[] = CATEGORIES.map((c) => c.type);
 
 export function deviceLabel(type: DeviceType): string {
   return LABELS[type];

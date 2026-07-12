@@ -6,8 +6,10 @@ import { makeQueryClient } from '@/lib/query';
 import { useScansWs } from '@/lib/use-scans-ws';
 import {
   Activity,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   Globe,
   MapPin,
@@ -25,7 +27,7 @@ import DeviceBadge from './device-badge';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { downloadText, toCsv } from '@/lib/export';
-import { deviceLabel, type DeviceType } from '@/lib/classify';
+import { deviceLabel, DEVICE_ORDER, type DeviceType } from '@/lib/classify';
 
 type Finding = {
   id: number;
@@ -44,6 +46,7 @@ type Finding = {
   asn?: number | null;
   org?: string | null;
   device?: { type: DeviceType; label: string; confidence?: 'high' | 'medium' | 'low' } | null;
+  ports?: { port: number; service: string | null }[];
 };
 
 type Stats = {
@@ -89,18 +92,21 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
   );
 }
 
-const DEVICE_ORDER: DeviceType[] = [
-  'camera', 'printer', 'firewall', 'windows-server', 'mobile', 'ssh-server', 'web-server',
-];
-
 function DashboardInner() {
   const searchParams = useSearchParams();
   const initialDevice = searchParams.get('device') as DeviceType | null;
+  const initialAsn = searchParams.get('asn');
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
   const [device, setDevice] = React.useState<DeviceType | ''>(
     initialDevice && DEVICE_ORDER.includes(initialDevice) ? initialDevice : ''
   );
+  const [asn, setAsn] = React.useState<number | null>(
+    initialAsn && /^\d+$/.test(initialAsn) ? Number(initialAsn) : null
+  );
+  const [software, setSoftware] = React.useState<string>(searchParams.get('software') ?? '');
+  const [showAllAsn, setShowAllAsn] = React.useState(false);
+  const [showAllSoftware, setShowAllSoftware] = React.useState(false);
   const [page, setPage] = React.useState(1);
   const pageSize = 25;
   const live = useScansWs(['runs']);
@@ -109,6 +115,8 @@ function DashboardInner() {
   if (q) params.set('q', q);
   if (port) params.set('port', port);
   if (device) params.set('device', device);
+  if (asn) params.set('asn', String(asn));
+  if (software) params.set('software', software);
 
   const stats = useQuery({
     queryKey: ['stats'],
@@ -117,15 +125,27 @@ function DashboardInner() {
   });
 
   const findings = useQuery({
-    queryKey: ['findings', q, port, page, device],
+    queryKey: ['findings', q, port, page, device, asn, software],
     queryFn: () => api<{ rows: Finding[]; total: number }>(`/api/findings?${params}`),
     refetchInterval: 10000,
+  });
+
+  const softwareFacet = useQuery({
+    queryKey: ['software'],
+    queryFn: () => api<{ software: { key: string; label: string; count: number }[] }>('/api/software'),
+    refetchInterval: 120000,
   });
 
   const deviceTypes = useQuery({
     queryKey: ['device-types'],
     queryFn: () => api<{ types: { device_type: DeviceType; count: number }[] }>('/api/device-types'),
     refetchInterval: 60000,
+  });
+
+  const asns = useQuery({
+    queryKey: ['asns'],
+    queryFn: () => api<{ asns: { asn: number; org: string | null; count: number }[] }>('/api/asns'),
+    refetchInterval: 120000,
   });
 
   const runs = useQuery({
@@ -229,6 +249,78 @@ function DashboardInner() {
             {device && (
               <button className="clear-filter" onClick={() => { setDevice(''); setPage(1); }}>
                 Clear device filter
+              </button>
+            )}
+          </div>
+
+          <div className="filter-panel">
+            <h4>Software</h4>
+            <div className="facet-list">
+              {(softwareFacet.data?.software ?? []).length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
+                  No software detected yet.
+                </div>
+              )}
+              {(softwareFacet.data?.software ?? [])
+                .slice(0, showAllSoftware ? undefined : 6)
+                .map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    className={`facet-item ${software === s.key ? 'active' : ''}`}
+                    onClick={() => { setSoftware(software === s.key ? '' : s.key); setPage(1); }}
+                  >
+                    <span className="facet-label">{s.label}</span>
+                    <span className="facet-count">{s.count.toLocaleString()}</span>
+                  </button>
+                ))}
+              {(softwareFacet.data?.software?.length ?? 0) > 6 && (
+                <button className="facet-more" onClick={() => setShowAllSoftware((v) => !v)}>
+                  {showAllSoftware ? 'Less' : 'More'}
+                  {showAllSoftware ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </button>
+              )}
+            </div>
+            {software && (
+              <button className="clear-filter" onClick={() => { setSoftware(''); setPage(1); }}>
+                Clear software filter
+              </button>
+            )}
+          </div>
+
+          <div className="filter-panel">
+            <h4>Network (ASN)</h4>
+            <div className="facet-list">
+              {(asns.data?.asns ?? []).length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
+                  No ASN data yet.
+                </div>
+              )}
+              {(asns.data?.asns ?? [])
+                .slice(0, showAllAsn ? undefined : 6)
+                .map((a) => (
+                  <button
+                    key={a.asn}
+                    type="button"
+                    className={`asn-item ${asn === a.asn ? 'active' : ''}`}
+                    title={a.org ?? undefined}
+                    onClick={() => { setAsn(asn === a.asn ? null : a.asn); setPage(1); }}
+                  >
+                    <span className="asn-num">AS{a.asn}</span>
+                    <span className="asn-org">{a.org ?? '—'}</span>
+                    <span className="facet-count">{a.count}</span>
+                  </button>
+                ))}
+              {(asns.data?.asns?.length ?? 0) > 6 && (
+                <button className="facet-more" onClick={() => setShowAllAsn((v) => !v)}>
+                  {showAllAsn ? 'Less' : 'More'}
+                  {showAllAsn ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </button>
+              )}
+            </div>
+            {asn && (
+              <button className="clear-filter" onClick={() => { setAsn(null); setPage(1); }}>
+                Clear ASN filter
               </button>
             )}
           </div>

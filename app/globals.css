@@ -5,22 +5,30 @@
 @tailwind utilities;
 
 :root {
-  --radius: 2px;
-  --bg: #070a0f;
-  --bg-elevated: #0c1016;
-  --bg-card: #11161f;
-  --bg-3: #161c27;
-  --border: #1b2330;
-  --border-light: #2a3442;
-  --text: #d9e0ea;
-  --text-muted: #828d9d;
-  --text-dim: #515b69;
+  /* Refined-dark theme, emerald accent. Deep slate ground (not pure black),
+     soft elevated surfaces, generous radii; mono reserved for IPs/ports/code. */
+  --radius: 10px;
+  --radius-sm: 7px;
 
-  --signal: #34e07e;
-  --signal-dim: #1c8f50;
-  --beam: #3fc7ff;
+  --bg: #0d1017;
+  --bg-elevated: #151a23;
+  --bg-card: #151a23;
+  --bg-3: #1b212c;
+  --surface-3: #212a37;
+  --border: #232b38;
+  --border-light: #303a49;
+  --text: #e7ecf3;
+  --text-muted: #97a4b8;
+  --text-dim: #5f6b7d;
+
+  /* emerald doubles as the accent AND the "open/success" semantic */
+  --signal: #10b981;
+  --signal-dim: #0e8f68;
+  --signal-hover: #34d399;
+  --signal-ink: #03150e;
+  --beam: #38bdf8;
   --amber: #f5b13d;
-  --red: #ff5c5c;
+  --red: #ff6b6b;
 
   /* legacy aliases used inline across components */
   --accent-green: var(--signal);
@@ -29,9 +37,12 @@
   --accent-amber: var(--amber);
   --accent-red: var(--red);
 
-  --font-ui: 'IBM Plex Sans', sans-serif;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .28);
+  --shadow-lg: 0 20px 46px -22px rgba(0, 0, 0, .62);
+
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', sans-serif;
-  --font-mono: 'IBM Plex Mono', monospace;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,28 +55,26 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* faint technical grid + corner vignette for atmosphere */
+/* soft emerald glow instead of the old technical grid */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(63, 199, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(63, 199, 255, 0.025) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 75%);
+  background:
+    radial-gradient(1100px 560px at 82% -12%, rgba(16, 185, 129, .10), transparent 60%),
+    radial-gradient(900px 500px at 8% -8%, rgba(56, 189, 248, .05), transparent 55%);
 }
 
 .app { position: relative; z-index: 1; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 0; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-::selection { background: rgba(52, 224, 126, 0.25); color: #fff; }
+::selection { background: rgba(16, 185, 129, 0.28); color: #fff; }
 
 /* ============ Top Nav ============ */
 .topnav {
@@ -77,7 +86,7 @@ body::before {
   justify-content: space-between;
   padding: 0 28px;
   height: 58px;
-  background: rgba(7, 10, 15, 0.82);
+  background: rgba(13, 16, 23, 0.8);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
 }
@@ -394,6 +403,40 @@ body::before {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
 }
 
+/* Sidebar facets: Software vendors + ASN networks (Shodan-style lists). */
+.facet-list { display: flex; flex-direction: column; gap: 2px; }
+.facet-item, .asn-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 9px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  cursor: pointer; text-align: left; color: var(--text); font: inherit;
+}
+.facet-item:hover, .asn-item:hover { background: rgba(255, 255, 255, 0.03); }
+.facet-item.active, .asn-item.active {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+}
+.facet-label { font-size: 13px; }
+.facet-item.active .facet-label { color: var(--signal-hover); }
+.facet-count {
+  margin-left: auto; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.asn-num { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+.asn-item.active .asn-num { color: var(--signal-hover); }
+.asn-org {
+  font-size: 11.5px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.facet-more {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px; padding: 4px 9px;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--signal); font: inherit; font-size: 12px; font-weight: 500;
+}
+.facet-more:hover { color: var(--signal-hover); }
+
 .scan-list { display: flex; flex-direction: column; gap: 8px; }
 .scan-item-link { text-decoration: none; color: inherit; display: block; }
 
@@ -477,13 +520,52 @@ a.results-export { text-decoration: none; }
 .host-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-left: 2px solid var(--signal-dim);
-  border-radius: 2px;
+  border-radius: var(--radius);
   overflow: hidden;
-  transition: border-color 0.15s, background 0.15s;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
-.host-card:hover { border-color: var(--border-light); border-left-color: var(--signal); }
+.host-card:hover { border-color: var(--border-light); box-shadow: var(--shadow-lg); }
+
+/* All open ports on a host, shown together (one host, many ports). */
+.port-strip {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 0 20px 14px;
+}
+.port-pill {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-3); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text);
+  text-decoration: none; transition: border-color 0.12s, color 0.12s;
+}
+.port-pill:hover { border-color: var(--signal); color: var(--signal-hover); }
+.port-pill-svc { font-family: var(--font-ui); font-size: 10px; font-weight: 500; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+
+/* Per-scan device-type breakdown (scan detail page). */
+.scan-devices {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px;
+}
+.scan-devices h3 {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 14px;
+}
+.scan-devices h3 svg { color: var(--signal); }
+.scan-devices-bar {
+  display: flex; height: 10px; border-radius: 999px; overflow: hidden;
+  background: var(--bg-3); gap: 2px; margin-bottom: 14px;
+}
+.scan-devices-seg { min-width: 4px; opacity: 0.85; transition: opacity 0.12s; }
+.scan-devices-seg:hover { opacity: 1; }
+.scan-devices-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.scan-devices-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  text-decoration: none;
+}
+.scan-devices-count { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); }
+.scan-devices-pct { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
 
 .card-header {
   display: flex; align-items: flex-start; justify-content: space-between;

@@ -792,14 +792,18 @@ a.results-export { text-decoration: none; }
 }
 
 .modal-card {
-  width: 100%; max-width: 460px; border-radius: 2px;
+  width: 100%; max-width: 460px; border-radius: var(--radius);
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-top: 2px solid var(--signal);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
+  /* Fit within the viewport: header + footer stay put, body scrolls. */
+  display: flex; flex-direction: column;
+  max-height: min(90vh, 760px);
 }
 
 .modal-header {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 20px; border-bottom: 1px solid var(--border);
 }
@@ -816,7 +820,9 @@ a.results-export { text-decoration: none; }
 }
 .modal-close:hover { color: var(--text); background: var(--border); }
 
-.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+/* The form holds the scrollable body + the pinned footer. */
+.modal-card form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 
 .modal-label, .modal-label-small {
   font-family: var(--font-mono); font-size: 10px; font-weight: 600;
@@ -849,8 +855,10 @@ a.results-export { text-decoration: none; }
 }
 
 .modal-footer {
+  flex-shrink: 0;
   display: flex; justify-content: flex-end; gap: 10px;
   padding: 14px 20px; border-top: 1px solid var(--border);
+  background: var(--bg-card);
 }
 
 .modal-btn-secondary {
@@ -1390,10 +1398,9 @@ a.results-export { text-decoration: none; }
   .page-num { white-space: nowrap; }
 
   .modal-overlay { align-items: flex-end; padding: 0; }
-  .modal-card { max-width: none; width: 100%; max-height: 92vh; border-radius: 8px 8px 0 0; overflow-y: auto; }
+  .modal-card { max-width: none; width: 100%; max-height: 92vh; border-radius: 12px 12px 0 0; }
   .modal-body { padding: 16px; }
   .modal-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .modal-footer { position: sticky; bottom: 0; background: var(--bg-card); }
   .modal-btn-secondary, .modal-btn-primary { flex: 1; justify-content: center; min-height: 42px; }
 
   .scan-detail-page { padding: 18px 12px 28px; }

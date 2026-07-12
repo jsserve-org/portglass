@@ -380,7 +380,9 @@ function HostDetailInner({ ip }: { ip: string }) {
                       "resolving…"
                     ) : !hasPtr ? null : dnsData?.dynamic?.isDynamic ? (
                       <span title={dnsData.dynamic.reason ?? undefined}>
-                        <Badge variant="amber">Dynamic IP</Badge>
+                        <Badge variant="amber">
+                          {dnsData.dynamic.confidence === "medium" ? "Likely dynamic" : "Dynamic IP"}
+                        </Badge>
                       </span>
                     ) : (
                       <Badge variant="slate">Static</Badge>

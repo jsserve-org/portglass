@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Shield } from "lucide-react";
+import { Shield, ArrowRight } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
 export default function LoginClient() {
@@ -31,14 +31,36 @@ export default function LoginClient() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <Shield size={48} />
-        <h1>Portglass</h1>
-        <p>Network Intelligence Dashboard</p>
-        <button className="auth-btn" onClick={handleSignIn} disabled={loading}>
-          <Shield size={14} />
-          {loading ? "Redirecting…" : "Sign In with Authentik"}
+        <div className="login-brand">
+          <span className="login-mark">
+            <Shield size={22} />
+          </span>
+          <span className="login-wordmark">portglass</span>
+        </div>
+
+        <div className="login-copy">
+          <h1 className="login-title">Sign in to your dashboard</h1>
+          <p className="login-sub">
+            Port-scan intelligence for your authorized infrastructure.
+          </p>
+        </div>
+
+        <button className="login-btn" onClick={handleSignIn} disabled={loading}>
+          {loading ? (
+            <>
+              <span className="login-spinner" /> Redirecting…
+            </>
+          ) : (
+            <>
+              Continue with Authentik
+              <ArrowRight size={16} />
+            </>
+          )}
         </button>
+
         {error && <p className="login-error">{error}</p>}
+
+        <p className="login-foot">Authorized access only · Single sign-on via Authentik</p>
       </div>
     </div>
   );

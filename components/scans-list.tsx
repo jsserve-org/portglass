@@ -153,7 +153,8 @@ function ScansListInner() {
     return (
       s.cidr.toLowerCase().includes(needle) ||
       s.ports.toLowerCase().includes(needle) ||
-      String(s.id).includes(needle)
+      String(s.id).includes(needle) ||
+      (s.label?.toLowerCase().includes(needle) ?? false)
     );
   });
 
@@ -199,7 +200,7 @@ function ScansListInner() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Filter scans by CIDR, ports, or ID…"
+            placeholder="Filter scans by label, CIDR, ports, or ID…"
           />
         </div>
 

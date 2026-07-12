@@ -63,8 +63,27 @@ runMigrations().then(() => app.prepare()).then(() => {
   });
 
   if (wss) {
+    // Heartbeat reaper. Behind nginx/Cloudflare a browser that navigates away
+    // often leaves a HALF-OPEN socket: the server never gets 'close', so its
+    // per-connection 2s self-fetch interval runs forever. These zombies pile up
+    // (CPU + memory) until the Node heap OOMs. Ping every 30s and terminate any
+    // socket that didn't pong since the last round.
+    const reaper = setInterval(() => {
+      for (const ws of wss.clients) {
+        if (ws.isAlive === false) {
+          ws.terminate();
+          continue;
+        }
+        ws.isAlive = false;
+        try { ws.ping(); } catch { /* socket dying; next round terminates it */ }
+      }
+    }, 30000);
+    wss.on('close', () => clearInterval(reaper));
+
     wss.on('connection', (ws, req) => {
       const cookie = req.headers.cookie || '';
+      ws.isAlive = true;
+      ws.on('pong', () => { ws.isAlive = true; });
       let closed = false;
       let timer = null;
       // Optional per-run detail subscription: the scan-detail page sends
@@ -74,6 +93,8 @@ runMigrations().then(() => app.prepare()).then(() => {
 
       const pushFrom = async (path, frame) => {
         if (closed) return;
+        // Don't pile up frames for a client that isn't draining (slow/dead).
+        if (ws.bufferedAmount > 1_000_000) return;
         try {
           const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { cookie } });
           if (res.status === 401) {

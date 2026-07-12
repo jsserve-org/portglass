@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { cached } from '@/lib/cache';
 import { junkMatchSql } from '@/lib/junk';
 import { deviceLabel, type DeviceType } from '@/lib/classify';
-import { deviceTypeCaseSql } from '@/lib/classify-sql';
 
 const DEVICE_TYPES = [
   'camera', 'printer', 'firewall', 'windows-server', 'mobile', 'ssh-server', 'web-server',
@@ -34,15 +33,10 @@ export async function GET(request: Request) {
   // Junk (Fortinet noise, junk ports) is purged from the DB and blocked at scan
   // time; this is a belt-and-suspenders filter so any stragglers never surface.
   const notJunk = sql`NOT ${junkMatchSql()}`;
-  // Optional device-type filter: keep only IPs whose whole-host classification
-  // matches. Applied before pagination so the count + pages line up.
+  // Optional device-type filter: keep only IPs whose pre-labelled classification
+  // matches (host_devices). Applied before pagination so count + pages line up.
   const deviceFilter = query.device
-    ? sql`AND ip::text IN (
-        SELECT ip::text FROM port_findings
-        WHERE ${notJunk}
-        GROUP BY ip
-        HAVING ${deviceTypeCaseSql()} = ${query.device}
-      )`
+    ? sql`AND ip IN (SELECT ip FROM host_devices WHERE device_type = ${query.device})`
     : sql``;
 
   // The search view intentionally returns one card per IP address. If a host
@@ -118,21 +112,16 @@ export async function GET(request: Request) {
       db.execute(countQuery),
     ]);
 
-    // The card shows one representative row per IP, but device classification
-    // needs the host's FULL port/banner set. Classify this page's IPs (≤ pageSize
-    // hosts) with the SAME SQL classifier the sidebar filter uses, so badge and
-    // filter always agree.
+    // Badge each card from the pre-labelled host_devices table — the same source
+    // the sidebar filter uses, so badges and filter always agree.
     const rows = rowsResult.rows as any[];
     const ips = [...new Set(rows.map((r) => String(r.ip)))];
     const deviceByIp = new Map<string, DeviceType>();
     if (ips.length) {
-      const agg = await db.execute(sql`
-        SELECT ip::text AS ip, ${deviceTypeCaseSql()} AS device_type
-        FROM port_findings
-        WHERE ip::text = ANY(${ips}) AND ${notJunk}
-        GROUP BY ip
+      const labelled = await db.execute(sql`
+        SELECT ip, device_type FROM host_devices WHERE ip = ANY(${ips})
       `);
-      for (const r of agg.rows as any[]) deviceByIp.set(r.ip, r.device_type as DeviceType);
+      for (const r of labelled.rows as any[]) deviceByIp.set(String(r.ip), r.device_type as DeviceType);
     }
 
     return {

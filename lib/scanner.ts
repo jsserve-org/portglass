@@ -61,6 +61,10 @@ export function launchScanner(runId: number, args: string[], env: NodeJS.Process
         import('@/lib/queue')
           .then((m) => m.dispatchQueued())
           .catch((err) => console.error('dispatchQueued after exit failed', err));
+        // Refresh persisted device labels for the hosts this scan just found.
+        import('@/lib/host-devices')
+          .then((m) => m.refreshHostDevices())
+          .catch((err) => console.error('refreshHostDevices after exit failed', err));
       });
   });
 

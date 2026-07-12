@@ -3,11 +3,10 @@ import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { sql } from 'drizzle-orm';
 import { cached } from '@/lib/cache';
-import { junkMatchSql } from '@/lib/junk';
-import { deviceTypeCaseSql } from '@/lib/classify-sql';
 
-// GET /api/device-types — count of distinct hosts per auto-detected device type
-// (junk excluded), for the search sidebar filter. Unknown hosts are omitted.
+// GET /api/device-types — count of hosts per auto-detected device type, read
+// from the pre-labelled host_devices table (materialized at boot + after each
+// scan). "unknown" hosts aren't stored, so they're naturally excluded.
 export async function GET() {
   if (authEnabled) {
     const session = await auth.api.getSession({ headers: await headers() });
@@ -17,13 +16,7 @@ export async function GET() {
   const payload = await cached('device-types', 30_000, async () => {
     const res = await db.execute(sql`
       SELECT device_type, COUNT(*)::int AS count
-      FROM (
-        SELECT ip, ${deviceTypeCaseSql()} AS device_type
-        FROM port_findings
-        WHERE NOT ${junkMatchSql()}
-        GROUP BY ip
-      ) t
-      WHERE device_type <> 'unknown'
+      FROM host_devices
       GROUP BY device_type
       ORDER BY count DESC
     `);

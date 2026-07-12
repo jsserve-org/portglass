@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { portFindings, scanRuns } from '@/lib/schema';
+import { portFindings, scanRuns, hostDevices } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { asc, gt, eq } from 'drizzle-orm';
@@ -13,14 +13,14 @@ const BATCH = 1000;
 
 const COLUMNS = [
   'id', 'ip', 'port', 'state', 'service', 'product',
-  'latency_ms', 'banner', 'headers', 'observed_at', 'run_id', 'scan_cidr',
+  'latency_ms', 'banner', 'headers', 'observed_at', 'run_id', 'scan_cidr', 'device_type',
 ] as const;
 
 type Row = {
   id: number; ip: string; port: number; state: string;
   service: string | null; product: string | null; latencyMs: number | null;
   banner: string | null; headers: string | null; observedAt: Date;
-  runId: number | null; scanCidr: string | null;
+  runId: number | null; scanCidr: string | null; deviceType: string | null;
 };
 
 function toRecord(r: Row): Record<string, unknown> {
@@ -29,7 +29,7 @@ function toRecord(r: Row): Record<string, unknown> {
     service: r.service ?? '', product: r.product ?? '',
     latency_ms: r.latencyMs ?? '', banner: r.banner ?? '', headers: r.headers ?? '',
     observed_at: r.observedAt instanceof Date ? r.observedAt.toISOString() : String(r.observedAt),
-    run_id: r.runId ?? '', scan_cidr: r.scanCidr ?? '',
+    run_id: r.runId ?? '', scan_cidr: r.scanCidr ?? '', device_type: r.deviceType ?? '',
   };
 }
 
@@ -45,9 +45,11 @@ async function fetchBatch(afterId: number): Promise<Row[]> {
       state: portFindings.state, service: portFindings.service, product: portFindings.product,
       latencyMs: portFindings.latencyMs, banner: portFindings.banner, headers: portFindings.headers,
       observedAt: portFindings.observedAt, runId: portFindings.runId, scanCidr: scanRuns.cidr,
+      deviceType: hostDevices.deviceType,
     })
     .from(portFindings)
     .leftJoin(scanRuns, eq(portFindings.runId, scanRuns.id))
+    .leftJoin(hostDevices, eq(portFindings.ip, hostDevices.ip))
     .where(gt(portFindings.id, afterId))
     .orderBy(asc(portFindings.id))
     .limit(BATCH) as unknown as Promise<Row[]>;

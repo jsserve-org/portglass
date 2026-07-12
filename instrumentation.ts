@@ -9,4 +9,13 @@ export async function register() {
     // Never let startup reconciliation crash the server boot.
     console.error('instrumentation: resumeOrphanedScans failed', err);
   }
+  try {
+    // Backfill device labels for everything already scanned (and reconcile any
+    // drift from schema/classifier changes) on boot.
+    const { refreshHostDevices } = await import('@/lib/host-devices');
+    const n = await refreshHostDevices();
+    if (n >= 0) console.log(`> host_devices backfilled (${n} labelled hosts)`);
+  } catch (err) {
+    console.error('instrumentation: refreshHostDevices failed', err);
+  }
 }

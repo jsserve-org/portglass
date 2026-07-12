@@ -110,6 +110,21 @@ export const shares = pgTable('shares', {
   refIdx: index('idx_shares_ref').on(table.kind, table.refId),
 }));
 
+// Persisted per-host device classification (camera / printer / firewall / …).
+// Derived from a host's findings by the SQL classifier and materialized here so
+// the sidebar filter, counts, and card badges are cheap index lookups instead
+// of a full-table aggregation on every request. Recomputed at boot and after
+// each scan completes (lib/host-devices.ts). Only non-"unknown" hosts are
+// stored; an absent row means "unknown".
+export const hostDevices = pgTable('host_devices', {
+  ip: text('ip').primaryKey(),
+  deviceType: text('device_type').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  typeIdx: index('idx_host_devices_type').on(table.deviceType),
+}));
+
 export type ScanRun = typeof scanRuns.$inferSelect;
 export type PortFinding = typeof portFindings.$inferSelect;
 export type Share = typeof shares.$inferSelect;
+export type HostDevice = typeof hostDevices.$inferSelect;

@@ -29,6 +29,13 @@
       "when": 1782571982825,
       "tag": "0003_scan_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783825462369,
+      "tag": "0004_nebulous_warpath",
+      "breakpoints": true
     }
   ]
 }

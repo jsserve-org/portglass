@@ -119,7 +119,7 @@ export async function GET(request: Request) {
     const deviceByIp = new Map<string, DeviceType>();
     if (ips.length) {
       const labelled = await db.execute(sql`
-        SELECT ip, device_type FROM host_devices WHERE ip = ANY(${sqlArray(ips)})
+        SELECT ip, device_type FROM host_devices WHERE ip = ANY(${sqlArray(ips)}::text[])
       `);
       for (const r of labelled.rows as any[]) deviceByIp.set(String(r.ip), r.device_type as DeviceType);
     }

@@ -55,7 +55,7 @@ export function sqlArray(items: (string | number)[]): SQL {
 // raw port/banner/headers/service/product columns.
 export function junkMatchSql(): SQL {
   return sql`(
-    port = ANY(${sqlArray(JUNK_PORTS)})
+    port = ANY(${sqlArray(JUNK_PORTS)}::int[])
     OR COALESCE(banner, '') ILIKE ANY(${sqlArray(PATTERNS)})
     OR COALESCE(headers, '') ILIKE ANY(${sqlArray(PATTERNS)})
     OR COALESCE(service, '') ILIKE ANY(${sqlArray(PATTERNS)})

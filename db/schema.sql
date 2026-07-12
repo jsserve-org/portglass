@@ -34,7 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_port_findings_banner_trgm ON port_findings USING 
 CREATE TABLE IF NOT EXISTS geo_blocks (
   network cidr PRIMARY KEY,
   country_iso TEXT,
-  country_name TEXT
+  country_name TEXT,
+  city_name TEXT,
+  latitude double precision,
+  longitude double precision
 );
 CREATE INDEX IF NOT EXISTS idx_geo_blocks_network ON geo_blocks USING gist (network inet_ops);
 

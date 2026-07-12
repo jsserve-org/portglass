@@ -1057,33 +1057,28 @@ a.results-export { text-decoration: none; }
 
 /* ============ World Map ============ */
 .worldmap { position: relative; }
-
-.worldmap-svg {
-  display: block; width: 100%; height: 300px;
-  background: #060a0e;
+.worldmap-link { display: block; }
+.worldmap-img {
+  display: block; width: 100%; height: auto; aspect-ratio: 640 / 300;
+  object-fit: cover; background: var(--bg-3);
 }
-
-.worldmap-grat line { stroke: rgba(63, 199, 255, 0.06); stroke-width: 0.4; }
-.worldmap-dots circle { fill: #243042; }
-
-.worldmap-marker .ring { fill: none; stroke: var(--signal); }
-.worldmap-marker .ring-1 { stroke-width: 0.8; opacity: 0.9; }
-.worldmap-marker .ring-2 { stroke-width: 0.5; opacity: 0.5; }
-.worldmap-marker .ring-3 { stroke-width: 0.4; opacity: 0.28; }
-.worldmap-marker .core { fill: var(--signal); }
-.worldmap-marker .cross { stroke: var(--signal); stroke-width: 0.6; opacity: 0.8; }
+.worldmap-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  height: 220px; background: var(--bg-3);
+}
 
 .worldmap-readout {
   position: absolute; left: 14px; bottom: 12px;
   display: flex; flex-direction: column; gap: 2px;
-  padding: 8px 12px; border-radius: 2px;
-  background: rgba(6, 10, 14, 0.78);
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: rgba(13, 16, 23, 0.82);
   border: 1px solid var(--border-light);
   backdrop-filter: blur(4px);
 }
 .worldmap-coord { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--signal); letter-spacing: 0.5px; }
-.worldmap-readout-empty .worldmap-coord { color: var(--text-dim); }
+.worldmap-empty .worldmap-coord { color: var(--text-dim); }
 .worldmap-place { font-size: 11px; color: var(--text-muted); }
+.worldmap-approx { color: var(--text-dim); }
 
 /* ============ Open Ports Strip ============ */
 .ports-strip {

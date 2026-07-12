@@ -46,6 +46,7 @@ _opener = build_opener(_StripAuthOnRedirect)
 DOWNLOAD_BASE = "https://download.maxmind.com/geoip/databases"
 EDITIONS = {
     "country": "GeoLite2-Country-CSV",
+    "city": "GeoLite2-City-CSV",
     "asn": "GeoLite2-ASN-CSV",
 }
 
@@ -92,6 +93,55 @@ def load_country(db_conn, src_dir: Path) -> int:
     return count
 
 
+def _ensure_geo_columns(cur) -> None:
+    cur.execute(
+        "ALTER TABLE geo_blocks "
+        "ADD COLUMN IF NOT EXISTS city_name TEXT, "
+        "ADD COLUMN IF NOT EXISTS latitude double precision, "
+        "ADD COLUMN IF NOT EXISTS longitude double precision"
+    )
+
+
+def load_city(db_conn, src_dir: Path) -> int:
+    """Load the GeoLite2-City edition: per-block lat/lon + city, so the app can
+    plot a real location. Much larger than the Country edition (~3.5M IPv4 rows),
+    so expect a heavier table + longer load."""
+    blocks = src_dir / "GeoLite2-City-Blocks-IPv4.csv"
+    locations = src_dir / "GeoLite2-City-Locations-en.csv"
+
+    geo: dict[str, tuple[str, str, str]] = {}
+    with locations.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            geo[row["geoname_id"]] = (
+                row["country_iso_code"],
+                row["country_name"],
+                row.get("city_name", ""),
+            )
+
+    with db_conn.cursor() as cur:
+        _ensure_geo_columns(cur)
+        cur.execute("TRUNCATE geo_blocks")
+        with cur.copy(
+            "COPY geo_blocks (network, country_iso, country_name, city_name, latitude, longitude) FROM STDIN"
+        ) as copy:
+            count = 0
+            with blocks.open(newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    gid = row["geoname_id"] or row["registered_country_geoname_id"]
+                    iso, name, city = geo.get(gid, ("", "", ""))
+                    copy.write_row((
+                        row["network"],
+                        iso or None,
+                        name or None,
+                        city or None,
+                        row["latitude"] or None,
+                        row["longitude"] or None,
+                    ))
+                    count += 1
+    db_conn.commit()
+    return count
+
+
 def load_asn(db_conn, src_dir: Path) -> int:
     blocks = src_dir / "GeoLite2-ASN-Blocks-IPv4.csv"
     with db_conn.cursor() as cur:
@@ -113,6 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db-url", default=os.environ.get("DATABASE_URL"), help="Postgres URL (or DATABASE_URL)")
     p.add_argument("--account-id", default=os.environ.get("MAXMIND_ACCOUNT_ID"))
     p.add_argument("--license-key", default=os.environ.get("MAXMIND_LICENSE_KEY"))
+    p.add_argument(
+        "--geo-edition",
+        choices=["country", "city"],
+        default=os.environ.get("MAXMIND_GEO_EDITION", "country"),
+        help="'country' (light, country-level) or 'city' (adds per-IP lat/lon + city; ~3.5M rows, heavier)",
+    )
     args = p.parse_args(argv)
 
     if not args.db_url:
@@ -130,13 +186,17 @@ def main(argv: list[str] | None = None) -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        country_dir = download_edition("country", args.account_id, args.license_key, tmp_path)
+        geo_dir = download_edition(args.geo_edition, args.account_id, args.license_key, tmp_path)
         asn_dir = download_edition("asn", args.account_id, args.license_key, tmp_path)
 
         db_conn = psycopg.connect(args.db_url)
         try:
-            n_geo = load_country(db_conn, country_dir)
-            print(f"Loaded {n_geo:,} geo_blocks", file=sys.stderr)
+            if args.geo_edition == "city":
+                n_geo = load_city(db_conn, geo_dir)
+                print(f"Loaded {n_geo:,} geo_blocks (city: lat/lon + city)", file=sys.stderr)
+            else:
+                n_geo = load_country(db_conn, geo_dir)
+                print(f"Loaded {n_geo:,} geo_blocks (country)", file=sys.stderr)
             n_asn = load_asn(db_conn, asn_dir)
             print(f"Loaded {n_asn:,} asn_blocks", file=sys.stderr)
         finally:

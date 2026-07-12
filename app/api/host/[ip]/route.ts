@@ -32,11 +32,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
     for (const r of runs) runsMap.set(r.id, r);
   }
 
-  // MaxMind enrichment: country (location) + ASN/org for this IP.
+  // MaxMind enrichment: country + (city/lat/lng if the City edition is loaded)
+  // + ASN/org for this IP. Each field is an independent longest-prefix lookup so
+  // an IP with an ASN but no geo row (or vice-versa) still returns what it has.
   const geoRows = await db.execute(sql`
+    WITH geo AS (SELECT * FROM geo_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1)
     SELECT
-      (SELECT country_iso FROM geo_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_iso,
-      (SELECT country_name FROM geo_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as country_name,
+      (SELECT country_iso FROM geo) as country_iso,
+      (SELECT country_name FROM geo) as country_name,
+      (SELECT city_name FROM geo) as city_name,
+      (SELECT latitude FROM geo) as latitude,
+      (SELECT longitude FROM geo) as longitude,
       (SELECT asn FROM asn_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as asn,
       (SELECT org FROM asn_blocks WHERE network >>= ${ip}::inet ORDER BY masklen(network) DESC LIMIT 1) as org
   `);
@@ -44,9 +50,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
 
   return NextResponse.json({
     ip,
+    // Public Mapbox token, injected at runtime from server env (kept out of the
+    // bundle/source so it isn't committed).
+    mapboxToken: process.env.MAPBOX_TOKEN || '',
     geo: {
       countryIso: g.country_iso ? String(g.country_iso) : null,
       countryName: g.country_name ? String(g.country_name) : null,
+      city: g.city_name ? String(g.city_name) : null,
+      latitude: g.latitude != null ? Number(g.latitude) : null,
+      longitude: g.longitude != null ? Number(g.longitude) : null,
       asn: g.asn != null ? Number(g.asn) : null,
       org: g.org ? String(g.org) : null,
     },

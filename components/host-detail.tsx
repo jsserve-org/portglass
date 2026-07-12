@@ -55,6 +55,9 @@ type Finding = {
 type Geo = {
   countryIso: string | null;
   countryName: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
   asn: number | null;
   org: string | null;
 };
@@ -128,7 +131,7 @@ function HostDetailInner({ ip }: { ip: string }) {
     queryFn: async () => {
       const res = await fetch(`/api/host/${encodeURIComponent(ip)}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ ip: string; geo?: Geo; findings: Finding[] }>;
+      return res.json() as Promise<{ ip: string; geo?: Geo; findings: Finding[]; mapboxToken?: string }>;
     },
     refetchInterval: 10000,
   });
@@ -201,7 +204,8 @@ function HostDetailInner({ ip }: { ip: string }) {
       "text/csv"
     );
 
-  const location = geo?.countryName || geo?.countryIso || "Unknown";
+  const country = geo?.countryName || geo?.countryIso || "Unknown";
+  const location = geo?.city ? `${geo.city}, ${country}` : country;
 
   if (data.isLoading) {
     return (
@@ -319,7 +323,13 @@ function HostDetailInner({ ip }: { ip: string }) {
                 </Badge>
               )}
             </CardHeader>
-            <WorldMap countryIso={geo?.countryIso ?? null} label={location} />
+            <WorldMap
+              lat={geo?.latitude ?? null}
+              lon={geo?.longitude ?? null}
+              countryIso={geo?.countryIso ?? null}
+              label={location}
+              token={data.data?.mapboxToken ?? null}
+            />
           </Card>
 
           <div className="flex flex-col gap-3.5">
@@ -361,6 +371,21 @@ function HostDetailInner({ ip }: { ip: string }) {
                     )
                   }
                   mono
+                />
+                <IntelRow
+                  icon={<Network />}
+                  label="Assignment"
+                  value={
+                    dnsq.isLoading ? (
+                      "resolving…"
+                    ) : !hasPtr ? null : dnsData?.dynamic?.isDynamic ? (
+                      <span title={dnsData.dynamic.reason ?? undefined}>
+                        <Badge variant="amber">Dynamic IP</Badge>
+                      </span>
+                    ) : (
+                      <Badge variant="slate">Static</Badge>
+                    )
+                  }
                 />
                 <IntelRow icon={<Server />} label="Open ports" value={ports.length} mono />
               </div>

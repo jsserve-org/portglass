@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import dns from 'node:dns/promises';
+import { detectDynamic, type DynamicVerdict } from '@/lib/dynamic-ip';
 
 export type HostDns = {
   ip: string;
   reverse: string[];          // PTR records (IP -> hostname)
   forward: Record<string, string[]>; // hostname -> A records
   fcrdns: boolean;            // does any forward A record map back to this IP?
+  dynamic: DynamicVerdict;    // does the reverse DNS look dynamic/residential?
 };
 
 // DNS is comparatively slow and rarely changes; cache per IP for an hour.
@@ -50,7 +52,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
   );
 
   const fcrdns = Object.values(forward).some((addrs) => addrs.includes(ip));
-  const data: HostDns = { ip, reverse, forward, fcrdns };
+  const dynamic = detectDynamic(ip, reverse);
+  const data: HostDns = { ip, reverse, forward, fcrdns, dynamic };
   cache.set(ip, { data, expires: Date.now() + TTL_MS });
   return NextResponse.json(data);
 }

@@ -45,6 +45,9 @@ services:
       AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:-}
       AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:?set long random session secret}
+      # Public Mapbox token (pk.*) for the host-location map. Read at runtime so
+      # it never has to be committed to the repo.
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
       # Max scans running at once; the rest queue. Keep low on this small host.
       MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
       # Give V8 an explicit heap ceiling (~1GB) instead of letting it auto-size

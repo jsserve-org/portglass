@@ -3,7 +3,6 @@
 import React from 'react';
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { makeQueryClient } from '@/lib/query';
-import { useScansWs } from '@/lib/use-scans-ws';
 import {
   Activity,
   ChevronDown,
@@ -12,8 +11,6 @@ import {
   ChevronUp,
   Download,
   Globe,
-  MapPin,
-  Monitor,
   Radio,
   Search,
   Server,
@@ -56,14 +53,6 @@ type Stats = {
   topPorts: { port: number; count: number }[];
 };
 
-type ScanRun = {
-  id: number;
-  cidr: string;
-  ports: string;
-  startedAt: string;
-  finishedAt: string | null;
-};
-
 const api = async <T,>(path: string): Promise<T> => {
   const res = await fetch(path, { credentials: 'include' });
   if (!res.ok) throw new Error(await res.text());
@@ -99,7 +88,6 @@ function DashboardInner() {
   const [showAllSoftware, setShowAllSoftware] = React.useState(false);
   const [page, setPage] = React.useState(1);
   const pageSize = 25;
-  const live = useScansWs(['runs']);
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set('q', q);
@@ -136,12 +124,6 @@ function DashboardInner() {
     queryKey: ['asns'],
     queryFn: () => api<{ asns: { asn: number; org: string | null; count: number }[] }>('/api/asns'),
     refetchInterval: 120000,
-  });
-
-  const runs = useQuery({
-    queryKey: ['runs'],
-    queryFn: () => api<ScanRun[]>('/api/runs'),
-    refetchInterval: live ? false : 30000,
   });
 
   const uniqueRows = React.useMemo(() => {
@@ -327,29 +309,6 @@ function DashboardInner() {
               <button className="clear-filter" onClick={() => setPort('')}>Clear port filter</button>
             )}
           </div>
-
-          <div className="filter-panel">
-            <h4>Recent Scans</h4>
-            <div className="scan-list">
-              {(runs.data ?? []).slice(0, 8).map((run) => (
-                <Link key={run.id} href={`/scan/${run.id}`} className="scan-item-link">
-                  <div className={`scan-item ${!run.finishedAt ? 'scan-active' : ''}`}>
-                    <div className="scan-row">
-                      <MapPin size={12} />
-                      <span className="scan-cidr">{run.cidr}</span>
-                      {!run.finishedAt && <span className="scan-pulse" />}
-                    </div>
-                    <div className="scan-row muted">
-                      <Monitor size={12} />
-                      <span>{run.ports.split(',').length} ports</span>
-                      <span className="spacer" />
-                      <span className={!run.finishedAt ? 'scan-status-active' : ''}>{run.finishedAt ? 'Done' : 'Active'}</span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
         </aside>
 
         <section className="results-main">
@@ -426,7 +385,9 @@ function DashboardInner() {
               <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 <ChevronLeft size={16} /> Previous
               </button>
-              <span className="page-num">Page {page}</span>
+              <span className="page-num">
+                Page {page} of {Math.max(1, Math.ceil(total / pageSize)).toLocaleString()}
+              </span>
               <button disabled={end >= total} onClick={() => setPage((p) => p + 1)}>
                 Next <ChevronRight size={16} />
               </button>

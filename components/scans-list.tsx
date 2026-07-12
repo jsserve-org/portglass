@@ -99,6 +99,21 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// Status filter chips (toggle a status off to hide those scans). Any unknown
+// status is bucketed as "failed" (rendered as Interrupted), matching StatusBadge.
+const STATUS_FILTERS: { key: string; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "queued", label: "Queued" },
+  { key: "completed", label: "Done" },
+  { key: "stalled", label: "Stalled" },
+  { key: "killed", label: "Killed" },
+  { key: "failed", label: "Interrupted" },
+];
+const KNOWN_STATUSES = new Set(STATUS_FILTERS.map((s) => s.key));
+function normStatus(s: string): string {
+  return KNOWN_STATUSES.has(s) ? s : "failed";
+}
+
 function ProgressBar({ pct }: { pct: number }) {
   return (
     <div className="progress-track">
@@ -112,6 +127,8 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function ScansListInner() {
   const [q, setQ] = useState("");
+  // Statuses hidden from the list (toggle a chip off to hide those scans).
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const live = useScansWs(["scans"]);
 
   const scans = useQuery({
@@ -124,7 +141,12 @@ function ScansListInner() {
     refetchInterval: live ? false : 5000,
   });
 
-  const rows = (scans.data ?? []).filter((s) => {
+  const all = scans.data ?? [];
+  const statusCounts = new Map<string, number>();
+  for (const s of all) statusCounts.set(normStatus(s.status), (statusCounts.get(normStatus(s.status)) ?? 0) + 1);
+
+  const rows = all.filter((s) => {
+    if (hidden.has(normStatus(s.status))) return false;
     if (!q.trim()) return true;
     const needle = q.toLowerCase();
     return (
@@ -133,6 +155,13 @@ function ScansListInner() {
       String(s.id).includes(needle)
     );
   });
+
+  const toggleStatus = (key: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   const activeCount = rows.filter((s) => s.status === "active").length;
 
@@ -164,13 +193,38 @@ function ScansListInner() {
           </div>
         </div>
 
-        <div className="scan-search-box" style={{ marginBottom: 20 }}>
+        <div className="scan-search-box" style={{ marginBottom: 14 }}>
           <Search size={14} />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Filter scans by CIDR, ports, or ID…"
           />
+        </div>
+
+        <div className="scan-filter-bar">
+          {STATUS_FILTERS.filter((f) => (statusCounts.get(f.key) ?? 0) > 0).map((f) => {
+            const off = hidden.has(f.key);
+            return (
+              <button
+                key={f.key}
+                type="button"
+                className={`scan-filter-chip status-${f.key} ${off ? "off" : ""}`}
+                aria-pressed={!off}
+                onClick={() => toggleStatus(f.key)}
+                title={off ? `Show ${f.label} scans` : `Hide ${f.label} scans`}
+              >
+                <span className="scan-filter-dot" />
+                {f.label}
+                <span className="scan-filter-count">{statusCounts.get(f.key)}</span>
+              </button>
+            );
+          })}
+          {hidden.size > 0 && (
+            <button type="button" className="scan-filter-reset" onClick={() => setHidden(new Set())}>
+              Show all
+            </button>
+          )}
         </div>
 
         <div className="scans-grid">
@@ -216,8 +270,17 @@ function ScansListInner() {
           {!rows.length && (
             <div className="empty-state" style={{ gridColumn: "1 / -1" }}>
               <Search size={40} />
-              <h3>No scans found</h3>
-              <p>Start a new scan from the dashboard.</p>
+              {all.length && (hidden.size || q.trim()) ? (
+                <>
+                  <h3>No scans match your filters</h3>
+                  <p>{hidden.size ? "Some statuses are hidden. " : ""}Adjust the filters above to see more.</p>
+                </>
+              ) : (
+                <>
+                  <h3>No scans found</h3>
+                  <p>Start a new scan from the dashboard.</p>
+                </>
+              )}
             </div>
           )}
         </div>

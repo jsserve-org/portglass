@@ -1134,6 +1134,33 @@ a.results-export { text-decoration: none; }
   color: var(--text); font-family: var(--font-mono); font-size: 13px;
 }
 
+/* Scan status filter chips — toggle a status off to hide those scans. */
+.scan-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; }
+.scan-filter-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 11px; border-radius: 999px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  transition: opacity 0.12s, border-color 0.12s, background 0.12s;
+}
+.scan-filter-chip:hover { border-color: var(--border-light); }
+.scan-filter-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-c, var(--text-muted)); flex-shrink: 0; }
+.scan-filter-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.scan-filter-chip.off { opacity: 0.4; }
+.scan-filter-chip.off .scan-filter-dot { background: var(--text-dim); }
+.scan-filter-chip.off:hover { opacity: 0.65; }
+.scan-filter-chip.status-active   { --chip-c: var(--beam); }
+.scan-filter-chip.status-queued   { --chip-c: var(--text-muted); }
+.scan-filter-chip.status-completed{ --chip-c: var(--signal); }
+.scan-filter-chip.status-stalled  { --chip-c: var(--amber); }
+.scan-filter-chip.status-killed   { --chip-c: var(--red); }
+.scan-filter-chip.status-failed   { --chip-c: var(--amber); }
+.scan-filter-reset {
+  padding: 6px 11px; background: transparent; border: 1px dashed var(--border-light);
+  border-radius: 999px; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer;
+}
+.scan-filter-reset:hover { color: var(--text); border-color: var(--text-muted); }
+
 .scans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; align-items: stretch; }
 .scan-card-link { text-decoration: none; color: inherit; display: flex; }
 

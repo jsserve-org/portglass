@@ -4,7 +4,7 @@ import { headers } from 'next/headers';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { cached } from '@/lib/cache';
-import { junkMatchSql } from '@/lib/junk';
+import { junkMatchSql, sqlArray } from '@/lib/junk';
 import { deviceLabel, type DeviceType } from '@/lib/classify';
 
 const DEVICE_TYPES = [
@@ -119,7 +119,7 @@ export async function GET(request: Request) {
     const deviceByIp = new Map<string, DeviceType>();
     if (ips.length) {
       const labelled = await db.execute(sql`
-        SELECT ip, device_type FROM host_devices WHERE ip = ANY(${ips})
+        SELECT ip, device_type FROM host_devices WHERE ip = ANY(${sqlArray(ips)})
       `);
       for (const r of labelled.rows as any[]) deviceByIp.set(String(r.ip), r.device_type as DeviceType);
     }

@@ -43,14 +43,22 @@ export function isJunk(f: {
   return JUNK_SIGNATURES.some((t) => hay.includes(t));
 }
 
+// Build `ARRAY[$1, $2, …]` from a JS array. Interpolating an array straight
+// into sql`` produces a comma-separated placeholder LIST (`$1, $2`), which is
+// invalid on the right of ANY() — ANY needs a single array. sql.join wraps the
+// params inside an explicit ARRAY[...] constructor so they bind as one array.
+export function sqlArray(items: (string | number)[]): SQL {
+  return sql`ARRAY[${sql.join(items.map((i) => sql`${i}`), sql`, `)}]`;
+}
+
 // SQL predicate that is TRUE when a port_findings row is junk. References the
 // raw port/banner/headers/service/product columns.
 export function junkMatchSql(): SQL {
   return sql`(
-    port = ANY(${JUNK_PORTS})
-    OR COALESCE(banner, '') ILIKE ANY(${PATTERNS})
-    OR COALESCE(headers, '') ILIKE ANY(${PATTERNS})
-    OR COALESCE(service, '') ILIKE ANY(${PATTERNS})
-    OR COALESCE(product, '') ILIKE ANY(${PATTERNS})
+    port = ANY(${sqlArray(JUNK_PORTS)})
+    OR COALESCE(banner, '') ILIKE ANY(${sqlArray(PATTERNS)})
+    OR COALESCE(headers, '') ILIKE ANY(${sqlArray(PATTERNS)})
+    OR COALESCE(service, '') ILIKE ANY(${sqlArray(PATTERNS)})
+    OR COALESCE(product, '') ILIKE ANY(${sqlArray(PATTERNS)})
   )`;
 }

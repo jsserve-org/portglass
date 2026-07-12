@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
+import DeviceBadge from "./device-badge";
+import { deviceLabel, type DeviceType } from "@/lib/classify";
 
 const queryClient = makeQueryClient();
 
@@ -42,6 +44,7 @@ type ScanRun = {
   currentIp: string | null;
   totalTargets: number | null;
   attemptedTargets: number | null;
+  deviceCounts?: { device_type: DeviceType; count: number }[];
 };
 
 function fmtDuration(sec: number): string {
@@ -253,6 +256,19 @@ function ScansListInner() {
                     {run.totalTargets ? (
                       <span className="spacer-dot">· {Math.min(99, Math.round(((run.attemptedTargets ?? 0) / run.totalTargets) * 100))}%</span>
                     ) : null}
+                  </div>
+                )}
+                {run.deviceCounts && run.deviceCounts.length > 0 && (
+                  <div className="scan-card-devices">
+                    {run.deviceCounts.slice(0, 3).map((d) => (
+                      <span key={d.device_type} className="scan-card-device">
+                        <DeviceBadge type={d.device_type} label={deviceLabel(d.device_type)} />
+                        <span className="scan-card-device-n">{d.count}</span>
+                      </span>
+                    ))}
+                    {run.deviceCounts.length > 3 && (
+                      <span className="scan-card-device-more">+{run.deviceCounts.length - 3}</span>
+                    )}
                   </div>
                 )}
                 <div className="scan-card-footer">

@@ -1187,6 +1187,10 @@ a.results-export { text-decoration: none; }
 .scan-card-cidr { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .scan-card-cidr svg { color: var(--signal); }
 .scan-card-ports { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.scan-card-devices { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.scan-card-device { display: inline-flex; align-items: center; gap: 3px; }
+.scan-card-device-n { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.scan-card-device-more { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
 .scan-card-footer { display: flex; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-top: auto; padding-top: 2px; }
 
 /* ============ Progress bar ============ */

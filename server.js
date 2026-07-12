@@ -88,11 +88,21 @@ runMigrations().then(() => app.prepare()).then(() => {
         }
       };
 
+      // Guard against overlap: setInterval fires every 2s regardless of whether
+      // the previous tick's self-fetches finished. Under load that let in-flight
+      // requests pile up unboundedly (memory runaway -> heap OOM). If a tick is
+      // still running, skip this one.
+      let ticking = false;
       const tick = async () => {
-        if (closed) return;
-        await pushFrom('/api/runs', { type: 'scans' });
-        if (subRunId != null) {
-          await pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
+        if (closed || ticking) return;
+        ticking = true;
+        try {
+          await pushFrom('/api/runs', { type: 'scans' });
+          if (subRunId != null) {
+            await pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
+          }
+        } finally {
+          ticking = false;
         }
       };
 

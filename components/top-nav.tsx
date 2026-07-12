@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Shield, Plus } from "lucide-react";
+import { Shield, Plus, Search, Boxes, Zap } from "lucide-react";
 import AuthNav from "./auth-nav";
 import ScanModal from "./scan-modal";
 
 const LINKS = [
-  { href: "/", label: "Search" },
-  { href: "/devices", label: "Devices" },
-  { href: "/scans", label: "Scans" },
+  { href: "/", label: "Search", Icon: Search },
+  { href: "/devices", label: "Devices", Icon: Boxes },
+  { href: "/scans", label: "Scans", Icon: Zap },
 ];
 
 /**
@@ -67,6 +67,28 @@ export default function TopNav({
           <AuthNav />
         </div>
       </nav>
+
+      {/* Mobile bottom navigation: centered, tappable section icons. */}
+      <nav className="mobile-nav" aria-label="Primary">
+        {LINKS.map((l) => {
+          const Icon = l.Icon;
+          return (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`mobile-nav-item${current === l.href ? " active" : ""}`}
+            >
+              <Icon size={20} />
+              <span>{l.label}</span>
+            </Link>
+          );
+        })}
+        <button className="mobile-nav-item" onClick={() => setShowScan(true)}>
+          <Plus size={20} />
+          <span>New Scan</span>
+        </button>
+      </nav>
+
       {showScan && (
         <ScanModal
           onClose={() => setShowScan(false)}

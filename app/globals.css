@@ -130,6 +130,9 @@ body::before {
 
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
+/* Mobile bottom navigation — hidden on desktop, shown under 640px. */
+.mobile-nav { display: none; }
+
 /* ============ Auth UI ============ */
 .auth-btn {
   display: inline-flex;
@@ -1347,17 +1350,36 @@ a.results-export { text-decoration: none; }
   html { font-size: 15px; }
   body { overflow-x: hidden; }
 
-  .topnav { position: sticky; height: auto; min-height: 56px; padding: 10px 12px; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
-  .nav-left, .nav-right { width: 100%; gap: 8px; flex-wrap: wrap; }
-  .nav-left { justify-content: flex-start; }
-  .nav-right { justify-content: space-between; }
-  .logo { width: 100%; font-size: 16px; margin-bottom: 2px; }
-  .nav-link, .scan-btn, .auth-btn, .auth-logout { min-height: 40px; align-items: center; }
-  .nav-link { display: inline-flex; padding: 8px 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.02); border-bottom-color: var(--border); }
-  .nav-link.active { border-color: rgba(52, 224, 126, 0.45); background: rgba(52, 224, 126, 0.08); }
-  .auth-user { max-width: 100%; flex: 1; min-width: 0; }
-  .auth-name { max-width: 100%; }
-  .scan-btn { padding: 8px 12px; }
+  /* Clean single-row top bar: brand + account. Sections + New Scan move to the
+     bottom nav so the top isn't a cramped wrap of pills. */
+  .topnav { position: sticky; height: 56px; min-height: 56px; padding: 0 14px; gap: 10px; align-items: center; flex-wrap: nowrap; }
+  .nav-left { width: auto; gap: 0; }
+  .nav-left .nav-link { display: none; }
+  .logo { width: auto; font-size: 16px; margin-bottom: 0; }
+  .nav-right { width: auto; gap: 8px; flex-wrap: nowrap; margin-left: auto; }
+  .nav-right .scan-btn { display: none; }
+  .auth-user { max-width: 150px; min-width: 0; }
+  .auth-name { max-width: 110px; }
+
+  /* Bottom navigation bar: centered, tappable section icons. */
+  .mobile-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
+    justify-content: space-around; align-items: stretch;
+    background: rgba(13, 16, 23, 0.94); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  .mobile-nav-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    flex: 1; min-height: 48px; padding: 6px 2px;
+    background: transparent; border: none; text-decoration: none; cursor: pointer;
+    color: var(--text-muted); font: inherit; font-size: 10px; font-weight: 500; letter-spacing: 0.02em;
+  }
+  .mobile-nav-item.active { color: var(--signal); }
+  .mobile-nav-item:active { background: rgba(255, 255, 255, 0.04); border-radius: 8px; }
+
+  /* Keep page content clear of the fixed bottom bar. */
+  .app { padding-bottom: 76px; }
 
   .search-hero { padding: 28px 14px 20px; text-align: left; min-height: 0; }
   .search-inner { max-width: none; }

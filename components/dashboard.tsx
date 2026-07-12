@@ -19,7 +19,6 @@ import {
   Server,
   Wifi,
   Zap,
-  Trophy,
 } from 'lucide-react';
 import TopNav from "./top-nav";
 import HostCard from './host-card';
@@ -63,15 +62,6 @@ type ScanRun = {
   ports: string;
   startedAt: string;
   finishedAt: string | null;
-};
-
-type TopHost = {
-  ip: string;
-  openPorts: number;
-  avgLatencyMs: number;
-  bestLatencyMs: number;
-  lastSeen: string;
-  ports: number[];
 };
 
 const api = async <T,>(path: string): Promise<T> => {
@@ -152,12 +142,6 @@ function DashboardInner() {
     queryKey: ['runs'],
     queryFn: () => api<ScanRun[]>('/api/runs'),
     refetchInterval: live ? false : 30000,
-  });
-
-  const topHosts = useQuery({
-    queryKey: ['top-hosts'],
-    queryFn: () => api<TopHost[]>('/api/top-hosts'),
-    refetchInterval: 30000,
   });
 
   const uniqueRows = React.useMemo(() => {
@@ -342,33 +326,6 @@ function DashboardInner() {
             {port && (
               <button className="clear-filter" onClick={() => setPort('')}>Clear port filter</button>
             )}
-          </div>
-
-          <div className="filter-panel">
-            <h4>Top Hosts</h4>
-            <div className="scan-list">
-              {(topHosts.data ?? []).map((h) => (
-                <Link key={h.ip} href={`/host/${encodeURIComponent(h.ip)}`} className="scan-item-link">
-                  <div className="scan-item">
-                    <div className="scan-row">
-                      <Trophy size={12} />
-                      <span className="scan-cidr">{h.ip}</span>
-                      <span className="spacer" />
-                      <span style={{ color: 'var(--accent-green)', fontWeight: 600, fontSize: 11 }}>{h.bestLatencyMs.toFixed(1)}ms</span>
-                    </div>
-                    <div className="scan-row muted">
-                      <Server size={12} />
-                      <span>{h.openPorts} ports</span>
-                      <span className="spacer" />
-                      <span>avg {h.avgLatencyMs.toFixed(1)}ms</span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-              {!topHosts.data?.length && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>No top hosts yet.</div>
-              )}
-            </div>
           </div>
 
           <div className="filter-panel">

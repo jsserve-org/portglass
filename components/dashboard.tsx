@@ -21,9 +21,11 @@ import {
 } from 'lucide-react';
 import TopNav from "./top-nav";
 import HostCard from './host-card';
+import DeviceBadge from './device-badge';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { downloadText, toCsv } from '@/lib/export';
-import type { DeviceType } from '@/lib/classify';
+import { deviceLabel, type DeviceType } from '@/lib/classify';
 
 type Finding = {
   id: number;
@@ -41,7 +43,7 @@ type Finding = {
   countryName?: string | null;
   asn?: number | null;
   org?: string | null;
-  device?: { type: DeviceType; label: string; confidence: 'high' | 'medium' | 'low' } | null;
+  device?: { type: DeviceType; label: string; confidence?: 'high' | 'medium' | 'low' } | null;
 };
 
 type Stats = {
@@ -87,9 +89,18 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
   );
 }
 
+const DEVICE_ORDER: DeviceType[] = [
+  'camera', 'printer', 'firewall', 'windows-server', 'mobile', 'ssh-server', 'web-server',
+];
+
 function DashboardInner() {
+  const searchParams = useSearchParams();
+  const initialDevice = searchParams.get('device') as DeviceType | null;
   const [q, setQ] = React.useState('');
   const [port, setPort] = React.useState('');
+  const [device, setDevice] = React.useState<DeviceType | ''>(
+    initialDevice && DEVICE_ORDER.includes(initialDevice) ? initialDevice : ''
+  );
   const [page, setPage] = React.useState(1);
   const pageSize = 25;
   const live = useScansWs(['runs']);
@@ -97,6 +108,7 @@ function DashboardInner() {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (q) params.set('q', q);
   if (port) params.set('port', port);
+  if (device) params.set('device', device);
 
   const stats = useQuery({
     queryKey: ['stats'],
@@ -105,9 +117,15 @@ function DashboardInner() {
   });
 
   const findings = useQuery({
-    queryKey: ['findings', q, port, page],
+    queryKey: ['findings', q, port, page, device],
     queryFn: () => api<{ rows: Finding[]; total: number }>(`/api/findings?${params}`),
     refetchInterval: 10000,
+  });
+
+  const deviceTypes = useQuery({
+    queryKey: ['device-types'],
+    queryFn: () => api<{ types: { device_type: DeviceType; count: number }[] }>('/api/device-types'),
+    refetchInterval: 60000,
   });
 
   const runs = useQuery({
@@ -180,6 +198,41 @@ function DashboardInner() {
 
       <main className="results">
         <aside className="filters">
+          <div className="filter-panel">
+            <h4>Device Type</h4>
+            <div className="device-filter">
+              {(() => {
+                const counts = new Map(
+                  (deviceTypes.data?.types ?? []).map((t) => [t.device_type, t.count])
+                );
+                const present = DEVICE_ORDER.filter((t) => counts.has(t) || t === device);
+                if (!present.length) {
+                  return (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
+                      No devices detected yet.
+                    </div>
+                  );
+                }
+                return present.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={`device-filter-item ${device === t ? 'active' : ''}`}
+                    onClick={() => { setDevice(device === t ? '' : t); setPage(1); }}
+                  >
+                    <DeviceBadge type={t} label={deviceLabel(t)} />
+                    <span className="device-filter-count">{counts.get(t) ?? 0}</span>
+                  </button>
+                ));
+              })()}
+            </div>
+            {device && (
+              <button className="clear-filter" onClick={() => { setDevice(''); setPage(1); }}>
+                Clear device filter
+              </button>
+            )}
+          </div>
+
           <div className="filter-panel">
             <h4>Port Filter</h4>
             <div className="port-grid">
@@ -341,7 +394,10 @@ const queryClient = makeQueryClient();
 export default function Dashboard() {
   return (
     <QueryClientProvider client={queryClient}>
-      <DashboardInner />
+      {/* useSearchParams (device deep-link) needs a Suspense boundary. */}
+      <React.Suspense fallback={null}>
+        <DashboardInner />
+      </React.Suspense>
     </QueryClientProvider>
   );
 }

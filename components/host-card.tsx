@@ -35,7 +35,7 @@ export default function HostCard({
     countryName?: string | null;
     asn?: number | null;
     org?: string | null;
-    device?: { type: DeviceType; label: string; confidence: 'high' | 'medium' | 'low' } | null;
+    device?: { type: DeviceType; label: string; confidence?: 'high' | 'medium' | 'low' } | null;
   };
   idx: number;
 }) {

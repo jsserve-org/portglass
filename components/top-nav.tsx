@@ -9,7 +9,7 @@ import ScanModal from "./scan-modal";
 
 const LINKS = [
   { href: "/", label: "Search" },
-  { href: "/hosts", label: "Hosts" },
+  { href: "/devices", label: "Devices" },
   { href: "/scans", label: "Scans" },
 ];
 
@@ -35,8 +35,8 @@ export default function TopNav({
   // /scan/<id> lights up Scans, etc. Callers may still override with `active`.
   const current =
     active ??
-    (pathname.startsWith("/host")
-      ? "/hosts"
+    (pathname.startsWith("/host") || pathname.startsWith("/devices")
+      ? "/devices"
       : pathname.startsWith("/scan")
       ? "/scans"
       : "/");

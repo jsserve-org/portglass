@@ -1,0 +1,92 @@
+"use client";
+
+import { useQuery, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/lib/query";
+import { Boxes, ArrowRight } from "lucide-react";
+import TopNav from "./top-nav";
+import DeviceBadge from "./device-badge";
+import Link from "next/link";
+import { deviceLabel, type DeviceType } from "@/lib/classify";
+
+const queryClient = makeQueryClient();
+
+// Order + one-line description per device type, shown as the tile subtitle.
+const CATALOG: { type: DeviceType; blurb: string }[] = [
+  { type: "camera", blurb: "RTSP / ONVIF streams, NVRs and IP cameras" },
+  { type: "printer", blurb: "JetDirect, IPP and LPD print services" },
+  { type: "firewall", blurb: "Firewalls, gateways and VPN appliances" },
+  { type: "windows-server", blurb: "Windows hosts exposing RDP / SMB" },
+  { type: "mobile", blurb: "Phones & tablets (iOS lockdownd, Android ADB)" },
+  { type: "ssh-server", blurb: "SSH / remote-shell endpoints" },
+  { type: "web-server", blurb: "HTTP(S) servers and web apps" },
+];
+
+function DevicesInner() {
+  const q = useQuery({
+    queryKey: ["device-types"],
+    queryFn: async () => {
+      const res = await fetch("/api/device-types", { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<{ types: { device_type: DeviceType; count: number }[] }>;
+    },
+    refetchInterval: 30000,
+  });
+
+  const counts = new Map((q.data?.types ?? []).map((t) => [t.device_type, t.count]));
+  const totalClassified = [...counts.values()].reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="app">
+      <TopNav active="/devices" />
+
+      <div className="scan-detail-page">
+        <div className="scan-detail-header">
+          <h1>
+            <Boxes size={18} />
+            Devices
+          </h1>
+          <div className="scan-meta-bar">
+            <span>{totalClassified.toLocaleString()} classified hosts across {counts.size} device type{counts.size === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+
+        <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
+          Every scanned host is auto-classified from its open ports and service
+          banners. Pick a category to jump into a filtered search.
+        </p>
+
+        <div className="device-grid">
+          {CATALOG.map(({ type, blurb }) => {
+            const n = counts.get(type) ?? 0;
+            const disabled = n === 0;
+            const tile = (
+              <div className={`device-tile ${disabled ? "device-tile-empty" : ""}`}>
+                <div className="device-tile-top">
+                  <DeviceBadge type={type} label={deviceLabel(type)} size="lg" />
+                  {!disabled && <ArrowRight size={16} className="device-tile-arrow" />}
+                </div>
+                <span className="device-tile-count">{n.toLocaleString()}</span>
+                <span className="device-tile-blurb">{blurb}</span>
+              </div>
+            );
+            return disabled ? (
+              <div key={type}>{tile}</div>
+            ) : (
+              <Link key={type} href={`/?device=${type}`} className="device-tile-link">
+                {tile}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DevicesOverview() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DevicesInner />
+    </QueryClientProvider>
+  );
+}

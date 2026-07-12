@@ -5,13 +5,19 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { cached } from '@/lib/cache';
 import { junkMatchSql } from '@/lib/junk';
-import { classifyDevice } from '@/lib/classify';
+import { deviceLabel, type DeviceType } from '@/lib/classify';
+import { deviceTypeCaseSql } from '@/lib/classify-sql';
+
+const DEVICE_TYPES = [
+  'camera', 'printer', 'firewall', 'windows-server', 'mobile', 'ssh-server', 'web-server',
+] as const;
 
 const querySchema = z.object({
   q: z.string().optional().default(''),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  device: z.enum(DEVICE_TYPES).optional(),
 });
 
 export async function GET(request: Request) {
@@ -28,6 +34,16 @@ export async function GET(request: Request) {
   // Junk (Fortinet noise, junk ports) is purged from the DB and blocked at scan
   // time; this is a belt-and-suspenders filter so any stragglers never surface.
   const notJunk = sql`NOT ${junkMatchSql()}`;
+  // Optional device-type filter: keep only IPs whose whole-host classification
+  // matches. Applied before pagination so the count + pages line up.
+  const deviceFilter = query.device
+    ? sql`AND ip::text IN (
+        SELECT ip::text FROM port_findings
+        WHERE ${notJunk}
+        GROUP BY ip
+        HAVING ${deviceTypeCaseSql()} = ${query.device}
+      )`
+    : sql``;
 
   // The search view intentionally returns one card per IP address. If a host
   // has multiple matching open ports, keep the most recently observed finding
@@ -59,6 +75,7 @@ export async function GET(request: Request) {
         FROM port_findings
         WHERE (${port}::int IS NULL OR port = ${port})
           AND ${notJunk}
+          ${deviceFilter}
           AND (
             ${needle}::text IS NULL
             OR ip ILIKE ${needle}
@@ -81,6 +98,7 @@ export async function GET(request: Request) {
     FROM port_findings
     WHERE (${port}::int IS NULL OR port = ${port})
       AND ${notJunk}
+      ${deviceFilter}
       AND (
         ${needle}::text IS NULL
         OR ip ILIKE ${needle}
@@ -93,7 +111,7 @@ export async function GET(request: Request) {
 
   // The search view auto-refreshes; identical queries (same filter + page) are
   // common across refreshes/clients. Cache the heavy geo-enriched result 10s.
-  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}`;
+  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}:${query.device ?? ''}`;
   const payload = await cached(cacheKey, 10_000, async () => {
     const [rowsResult, totalRows] = await Promise.all([
       db.execute(rowsQuery),
@@ -101,37 +119,28 @@ export async function GET(request: Request) {
     ]);
 
     // The card shows one representative row per IP, but device classification
-    // needs the host's FULL port/banner set. Pull all (non-junk) findings for
-    // just this page's IPs (≤ pageSize hosts) and classify each in JS.
+    // needs the host's FULL port/banner set. Classify this page's IPs (≤ pageSize
+    // hosts) with the SAME SQL classifier the sidebar filter uses, so badge and
+    // filter always agree.
     const rows = rowsResult.rows as any[];
     const ips = [...new Set(rows.map((r) => String(r.ip)))];
-    const deviceByIp = new Map<string, ReturnType<typeof classifyDevice>>();
+    const deviceByIp = new Map<string, DeviceType>();
     if (ips.length) {
       const agg = await db.execute(sql`
-        SELECT ip::text AS ip, port,
-               service, product,
-               LEFT(COALESCE(banner, ''), 512) AS banner,
-               LEFT(COALESCE(headers, ''), 2048) AS headers
+        SELECT ip::text AS ip, ${deviceTypeCaseSql()} AS device_type
         FROM port_findings
         WHERE ip::text = ANY(${ips}) AND ${notJunk}
+        GROUP BY ip
       `);
-      const byIp = new Map<string, any[]>();
-      for (const f of agg.rows as any[]) {
-        const list = byIp.get(f.ip) ?? [];
-        list.push(f);
-        byIp.set(f.ip, list);
-      }
-      for (const [ip, list] of byIp) deviceByIp.set(ip, classifyDevice(list));
+      for (const r of agg.rows as any[]) deviceByIp.set(r.ip, r.device_type as DeviceType);
     }
 
     return {
       rows: rows.map((r) => {
-        const d = deviceByIp.get(String(r.ip));
+        const t = deviceByIp.get(String(r.ip));
         return {
           ...r,
-          device: d && d.type !== 'unknown'
-            ? { type: d.type, label: d.label, confidence: d.confidence }
-            : null,
+          device: t && t !== 'unknown' ? { type: t, label: deviceLabel(t) } : null,
         };
       }),
       total: Number((totalRows.rows[0] as any)?.value ?? 0),

@@ -14,6 +14,7 @@ import {
   Search,
   Trash2,
   Play,
+  Plus,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import TopNav from "./top-nav";
 import ManagePanel from "./manage-panel";
+import ScanModal from "./scan-modal";
 import Link from "next/link";
 
 const queryClient = makeQueryClient();
@@ -131,6 +133,7 @@ function ScansListInner() {
   const [q, setQ] = useState("");
   // Statuses hidden from the list (toggle a chip off to hide those scans).
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [showScan, setShowScan] = useState(false);
   const live = useScansWs(["scans"]);
 
   const scans = useQuery({
@@ -185,6 +188,14 @@ function ScansListInner() {
                 {activeCount} active
               </span>
             )}
+            <button
+              type="button"
+              className="scan-btn"
+              style={{ marginLeft: "auto" }}
+              onClick={() => setShowScan(true)}
+            >
+              <Plus size={14} /> New Scan
+            </button>
           </div>
           <div className="scan-meta-bar">
             <span style={{ color: live ? "var(--accent-cyan)" : "var(--text-dim)" }} title={live ? "Live via WebSocket" : "Polling (WebSocket unavailable)"}>
@@ -284,13 +295,23 @@ function ScansListInner() {
               ) : (
                 <>
                   <h3>No scans found</h3>
-                  <p>Start a new scan from the dashboard.</p>
+                  <p>Start one with the New Scan button above.</p>
                 </>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {showScan && (
+        <ScanModal
+          onClose={() => setShowScan(false)}
+          onStarted={() => {
+            // The list updates itself over the WebSocket/poll; just close.
+            setShowScan(false);
+          }}
+        />
+      )}
     </div>
   );
 }

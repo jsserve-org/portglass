@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
-import { Shield, Plus, Search, Boxes, Zap } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Shield, Search, Boxes, Zap } from "lucide-react";
 import AuthNav from "./auth-nav";
-import ScanModal from "./scan-modal";
 
 const LINKS = [
   { href: "/", label: "Search", Icon: Search },
@@ -15,10 +13,10 @@ const LINKS = [
 
 /**
  * The single shared top navigation for every page. It owns the logo, section
- * links (auto-highlighted from the current path), the global "New Scan" button
- * + modal, and the signed-in user account — so the nav is identical everywhere
- * and pages don't have to wire any of it up. `active`/`right` remain optional
- * overrides for one-off cases.
+ * links (auto-highlighted from the current path), and the signed-in user
+ * account. Starting a scan (one-off or recurring) lives on the Scans page, so
+ * the nav no longer carries a "New Scan" button. `active`/`right` remain
+ * optional overrides for one-off cases.
  */
 export default function TopNav({
   active,
@@ -28,8 +26,6 @@ export default function TopNav({
   right?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [showScan, setShowScan] = useState(false);
 
   // Derive the highlighted section from the path so /host/<ip> lights up Hosts,
   // /scan/<id> lights up Scans, etc. Callers may still override with `active`.
@@ -61,9 +57,6 @@ export default function TopNav({
         </div>
         <div className="nav-right">
           {right}
-          <button className="scan-btn" onClick={() => setShowScan(true)}>
-            <Plus size={14} /> New Scan
-          </button>
           <AuthNav />
         </div>
       </nav>
@@ -83,23 +76,7 @@ export default function TopNav({
             </Link>
           );
         })}
-        <button className="mobile-nav-item" onClick={() => setShowScan(true)}>
-          <Plus size={20} />
-          <span>New Scan</span>
-        </button>
       </nav>
-
-      {showScan && (
-        <ScanModal
-          onClose={() => setShowScan(false)}
-          onStarted={() => {
-            // Started scans live on the Scans page; go there so the new run is
-            // visible regardless of which page launched it.
-            router.push("/scans");
-            router.refresh();
-          }}
-        />
-      )}
     </>
   );
 }

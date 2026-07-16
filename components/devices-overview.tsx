@@ -7,6 +7,7 @@ import TopNav from "./top-nav";
 import DeviceBadge from "./device-badge";
 import Link from "next/link";
 import { deviceLabel, type DeviceType } from "@/lib/classify";
+import type { DeviceTypeCount } from "@/lib/device-counts";
 
 const queryClient = makeQueryClient();
 
@@ -33,14 +34,18 @@ const CATALOG: { type: DeviceType; blurb: string }[] = [
   { type: "web-server", blurb: "HTTP(S) servers and web apps" },
 ];
 
-function DevicesInner() {
+function DevicesInner({ initialTypes }: { initialTypes: DeviceTypeCount[] }) {
   const q = useQuery({
     queryKey: ["device-types"],
     queryFn: async () => {
       const res = await fetch("/api/device-types", { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
-      return res.json() as Promise<{ types: { device_type: DeviceType; count: number }[] }>;
+      return res.json() as Promise<{ types: DeviceTypeCount[] }>;
     },
+    // Seed with the server-rendered counts so the grid shows real numbers on
+    // first paint; still refresh every 30s for liveness.
+    initialData: { types: initialTypes },
+    initialDataUpdatedAt: 0,
     refetchInterval: 30000,
   });
 
@@ -95,10 +100,10 @@ function DevicesInner() {
   );
 }
 
-export default function DevicesOverview() {
+export default function DevicesOverview({ initialTypes = [] }: { initialTypes?: DeviceTypeCount[] }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <DevicesInner />
+      <DevicesInner initialTypes={initialTypes} />
     </QueryClientProvider>
   );
 }

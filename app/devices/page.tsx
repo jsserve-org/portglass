@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import DevicesOverview from '@/components/devices-overview';
+import { deviceTypeCounts } from '@/lib/device-counts';
 
 export default async function DevicesPage() {
   const h = await headers();
@@ -9,5 +10,8 @@ export default async function DevicesPage() {
   if (!hasSession) {
     redirect('/login');
   }
-  return <DevicesOverview />;
+  // Fetch the counts here (cheap, cached) so the page paints with real numbers
+  // immediately — no client fetch waterfall / empty-tile flash on load.
+  const { types } = await deviceTypeCounts();
+  return <DevicesOverview initialTypes={types} />;
 }

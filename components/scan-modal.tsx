@@ -1,9 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+// Recurring-scan intervals (minutes). "off" = one-shot scan.
+const REPEATS = [
+  { label: "Don't repeat (one-off)", value: "off" },
+  { label: "Every hour", value: "60" },
+  { label: "Every 6 hours", value: "360" },
+  { label: "Every 12 hours", value: "720" },
+  { label: "Daily", value: "1440" },
+  { label: "Weekly", value: "10080" },
+];
 
 const PRESETS = [
   { label: "Common (21,22,23,53,80,443,554,8443,9000,9443,5000,5001,8080,3389,3306,5432...)", value: "common" },
@@ -75,6 +85,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [stealth, setStealth] = useState(false);
   const [deep, setDeep] = useState(false);
   const [fast, setFast] = useState(false);
+  const [repeat, setRepeat] = useState("off");
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -108,25 +119,39 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          cidr: cidr.trim(),
-          label: label.trim() || undefined,
-          ports: portsValue,
-          threads,
-          concurrency,
-          timeout,
-          rate,
-          proxy: proxy.trim() || undefined,
-          discover,
-          stealth,
-          deep,
-          fast,
-        }),
-      });
+      // A repeating scan creates a schedule (which fires immediately, runNow),
+      // so the user gets a first result now and recurring runs after. A one-off
+      // hits the plain scan endpoint.
+      const recurring = repeat !== "off";
+      const commonOpts = {
+        cidr: cidr.trim(),
+        label: label.trim() || undefined,
+        ports: portsValue,
+        discover,
+        stealth,
+        deep,
+        fast,
+      };
+      const res = recurring
+        ? await fetch("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ ...commonOpts, intervalMinutes: parseInt(repeat, 10), runNow: true }),
+          })
+        : await fetch("/api/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              ...commonOpts,
+              threads,
+              concurrency,
+              timeout,
+              rate,
+              proxy: proxy.trim() || undefined,
+            }),
+          });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to start scan");
@@ -157,7 +182,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               className="modal-input"
               value={cidr}
               onChange={(e) => setCidr(e.target.value)}
-              placeholder="192.168.0.0/24"
+              placeholder="192.168.0.0/24 or 2001:db8::/112"
               required
             />
 
@@ -184,6 +209,20 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 onChange={(e) => setCustomPorts(e.target.value)}
                 placeholder="80,443,8080 or 1-1024"
               />
+            )}
+
+            <label className="modal-label">
+              <span className="inline-flex items-center gap-1.5"><Repeat size={12} /> Repeat</span>
+            </label>
+            <select className="modal-input" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+              {REPEATS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+            {repeat !== "off" && (
+              <p className="-mt-1 mb-1 text-[11px] leading-snug text-muted-foreground">
+                Runs now and then automatically on this interval. Manage or stop it from the Scans page.
+              </p>
             )}
 
             <div className="flex flex-col gap-2">
@@ -267,8 +306,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
           <div className="modal-footer">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={loading}>
-              <Play size={14} />
-              {loading ? "Starting…" : "Start Scan"}
+              {repeat !== "off" ? <Repeat size={14} /> : <Play size={14} />}
+              {loading ? "Starting…" : repeat !== "off" ? "Schedule & Run" : "Start Scan"}
             </Button>
           </div>
         </form>

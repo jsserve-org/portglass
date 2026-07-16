@@ -43,6 +43,13 @@
       "when": 1783876300247,
       "tag": "0005_large_ultimatum",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784213048068,
+      "tag": "0006_chief_umar",
+      "breakpoints": true
     }
   ]
 }

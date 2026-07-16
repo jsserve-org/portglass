@@ -8,6 +8,7 @@
 // browser stops polling. If anything WS-related fails the HTTP app is
 // unaffected and clients fall back to normal REST polling.
 const path = require('path');
+const crypto = require('crypto');
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
@@ -15,6 +16,11 @@ const { WebSocketServer } = require('ws');
 
 const port = parseInt(process.env.PORT || '51111', 10);
 const hostname = process.env.HOSTNAME || '0.0.0.0';
+
+// Secret shared with the /api/internal/tick route (same process, so a random
+// value in env is enough) so recurring scans can only be fired in-process.
+process.env.INTERNAL_TICK_SECRET =
+  process.env.INTERNAL_TICK_SECRET || crypto.randomBytes(24).toString('hex');
 
 const app = next({ dev: false, hostname, port });
 const handle = app.getRequestHandler();
@@ -154,6 +160,27 @@ runMigrations().then(() => app.prepare()).then(() => {
       timer = setInterval(tick, 2000);
     });
   }
+
+  // Recurring-scan scheduler: once a minute, ask the app to launch any due
+  // schedules. Runs in-process via an internal, secret-gated endpoint so it
+  // reuses the app's DB pool + queue logic. A guard prevents overlap if a tick
+  // ever runs long.
+  let schedTicking = false;
+  const scheduleTick = async () => {
+    if (schedTicking) return;
+    schedTicking = true;
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/internal/tick`, {
+        method: 'POST',
+        headers: { 'x-internal-secret': process.env.INTERNAL_TICK_SECRET },
+      });
+    } catch {
+      /* transient; try again next minute */
+    } finally {
+      schedTicking = false;
+    }
+  };
+  setInterval(scheduleTick, 60_000);
 
   server.listen(port, () => {
     console.log(`> Portglass ready on http://${hostname}:${port} (WS: /api/ws/scans)`);

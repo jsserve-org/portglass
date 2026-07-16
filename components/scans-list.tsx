@@ -20,6 +20,7 @@ import {
   Server,
 } from "lucide-react";
 import TopNav from "./top-nav";
+import ManagePanel from "./manage-panel";
 import Link from "next/link";
 
 const queryClient = makeQueryClient();
@@ -194,6 +195,8 @@ function ScansListInner() {
             <span><XCircle size={12} /> {rows.filter((s) => s.status === "killed").length} killed</span>
           </div>
         </div>
+
+        <ManagePanel />
 
         <div className="scan-search-box" style={{ marginBottom: 14 }}>
           <Search size={14} />

@@ -49,6 +49,9 @@ type Finding = {
   service: string | null;
   product: string | null;
   observedAt: string;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
+  scanCount?: number;
   run: { id: number; cidr: string; startedAt: string } | null;
 };
 
@@ -167,6 +170,21 @@ function HostDetailInner({ ip }: { ip: string }) {
     [findings]
   );
 
+  // Findings are now merged to one row per port; derive host-wide first/last
+  // seen and the total number of observations across every scan.
+  const lastSeenAll = useMemo(() => {
+    const ts = findings.map((f) => new Date(f.lastSeen ?? f.observedAt).getTime()).filter((n) => !Number.isNaN(n));
+    return ts.length ? new Date(Math.max(...ts)) : null;
+  }, [findings]);
+  const firstSeenAll = useMemo(() => {
+    const ts = findings.map((f) => new Date(f.firstSeen ?? f.observedAt).getTime()).filter((n) => !Number.isNaN(n));
+    return ts.length ? new Date(Math.min(...ts)) : null;
+  }, [findings]);
+  const totalObservations = useMemo(
+    () => findings.reduce((sum, f) => sum + (f.scanCount ?? 1), 0),
+    [findings]
+  );
+
   // Auto-detected device type (camera / printer / firewall / web / ssh /
   // windows-RDP / mobile) from this host's ports + banners.
   const device = useMemo(() => classifyDevice(findings), [findings]);
@@ -246,8 +264,13 @@ function HostDetailInner({ ip }: { ip: string }) {
               <Radio /> {ports.length} open port{ports.length === 1 ? "" : "s"}
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <Clock /> Last seen {findings[0] ? new Date(findings[0].observedAt).toLocaleString() : "—"}
+              <Clock /> Last seen {lastSeenAll ? lastSeenAll.toLocaleString() : "—"}
             </span>
+            {firstSeenAll && (
+              <span className="inline-flex items-center gap-1.5" title={firstSeenAll.toLocaleString()}>
+                <Clock /> First seen {firstSeenAll.toLocaleDateString()}
+              </span>
+            )}
             {geo?.countryIso && (
               <span className="inline-flex items-center gap-1.5">
                 <Globe /> {flagEmoji(geo.countryIso)} {geo.countryName || geo.countryIso}
@@ -458,7 +481,10 @@ function HostDetailInner({ ip }: { ip: string }) {
           <h3>
             <Terminal size={14} /> Service Detail
             <span className="findings-count">
-              {findings.length} record{findings.length === 1 ? "" : "s"}
+              {findings.length} port{findings.length === 1 ? "" : "s"}
+              {totalObservations > findings.length && (
+                <> · {totalObservations.toLocaleString()} observations merged</>
+              )}
             </span>
           </h3>
 
@@ -468,6 +494,7 @@ function HostDetailInner({ ip }: { ip: string }) {
                 <tr>
                   <th>Port</th>
                   <th>Scan</th>
+                  <th>Seen</th>
                   <th>Latency</th>
                   <th>Banner</th>
                   <th>Headers</th>
@@ -499,6 +526,21 @@ function HostDetailInner({ ip }: { ip: string }) {
                       ) : (
                         "—"
                       )}
+                    </td>
+                    <td>
+                      <div className="flex flex-col gap-0.5 whitespace-nowrap font-mono text-[10px] leading-tight">
+                        <span
+                          className="text-foreground"
+                          title={`Last seen ${f.lastSeen ? new Date(f.lastSeen).toLocaleString() : new Date(f.observedAt).toLocaleString()}`}
+                        >
+                          {new Date(f.lastSeen ?? f.observedAt).toLocaleDateString()}
+                        </span>
+                        {(f.scanCount ?? 1) > 1 && f.firstSeen && (
+                          <span className="text-[var(--text-dim)]" title={`First seen ${new Date(f.firstSeen).toLocaleString()}`}>
+                            {f.scanCount}× since {new Date(f.firstSeen).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td>{f.latencyMs ? `${f.latencyMs.toFixed(1)}ms` : "—"}</td>
                     <td className="cell-ellipsis" title={f.banner || ""}>

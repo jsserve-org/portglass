@@ -374,10 +374,29 @@ async def _open_connection(ip: str, port: int, timeout: float, proxy: tuple[str,
     return await socks5_connect(proxy[0], proxy[1], ip, port, timeout=timeout)
 
 
+# IPv6 ranges are astronomically large (a single /64 has 2^64 addresses), so we
+# never enumerate a whole one. When --max-targets is left at auto (0), an IPv6
+# scan is capped to this many hosts; IPv4 stays unlimited (the web UI already
+# restricts IPv4 to /8 or narrower).
+V6_DEFAULT_HOST_CAP = 65536
+
+
+def parse_excludes(spec: str) -> list:
+    """Parse a comma-separated CIDR list into ip_network objects (v4 and v6)."""
+    nets = []
+    for chunk in (spec or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(chunk, strict=False))
+        except ValueError:
+            print(f"Ignoring invalid --exclude entry: {chunk}", file=sys.stderr)
+    return nets
+
+
 def iter_targets(cidr: str, ports: Sequence[int]) -> Iterator[tuple[str, int]]:
     net = ipaddress.ip_network(cidr, strict=False)
-    if net.version != 4:
-        raise ValueError("only IPv4 ranges are supported")
     for ip in net.hosts():
         ip_s = str(ip)
         for port in ports:
@@ -585,10 +604,19 @@ async def discover_hosts(
     rate: float,
     threads: int,
     proxy: tuple[str, int] | None,
+    max_hosts: int = 0,
+    exclude_nets: list | None = None,
 ) -> set[str]:
     """Quickly find alive hosts by probing a small set of ports."""
     net = ipaddress.ip_network(cidr, strict=False)
-    hosts = [str(ip) for ip in net.hosts()]
+    exclude_nets = exclude_nets or []
+    hosts = []
+    for ip in net.hosts():
+        if exclude_nets and any(ip in ex for ex in exclude_nets):
+            continue
+        hosts.append(str(ip))
+        if max_hosts and len(hosts) >= max_hosts:
+            break
     total = len(hosts) * len(ports)
     if total == 0:
         return set()
@@ -767,7 +795,7 @@ def db_progress_thread(
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fast multi-threaded authorized TCP connect port scanner")
-    p.add_argument("cidr", help="IPv4 CIDR to scan, e.g. 192.168.0.0/16")
+    p.add_argument("cidr", help="IPv4 or IPv6 CIDR to scan, e.g. 192.168.0.0/16 or 2001:db8::/112")
     p.add_argument("-p", "--ports", default="common", help="Ports: common, top100, 80,443, or 1-1024 (default: common)")
     p.add_argument("-o", "--output", default="scan-results.csv", help="CSV output path")
     p.add_argument("--threads", type=int, default=4, help="OS scanner threads (default: 4)")
@@ -807,6 +835,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--discover", action="store_true", help="Quickly discover alive hosts first, then full-scan only those")
     p.add_argument("--discover-ports", default="22,80,443,445,3389", help="Ports used for host discovery (default: 22,80,443,445,3389)")
     p.add_argument("--discover-timeout", type=float, default=0.6, help="Discovery connect timeout (default: 0.6)")
+    p.add_argument("--exclude", default="", help="Comma-separated CIDRs to skip entirely (e.g. skip subnets); addresses inside them are never probed")
+    p.add_argument("--max-targets", type=int, default=0, help="Cap the number of hosts enumerated (0 = auto: unlimited for IPv4, %d for IPv6 to keep huge ranges bounded)" % V6_DEFAULT_HOST_CAP)
     p.add_argument("--yes-i-own-this-network", action="store_true", help="Required acknowledgement for authorized scanning")
     return p
 
@@ -937,6 +967,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - finishing must never raise
             print(f"Failed to mark run_id={run_id} finished: {exc}", file=sys.stderr)
 
+    # Skip subnets (--exclude) and the host cap. IPv6 auto-caps so we never try
+    # to enumerate a /64; IPv4 stays unlimited unless explicitly capped.
+    exclude_nets = parse_excludes(args.exclude)
+    if exclude_nets:
+        print(f"Excluding {len(exclude_nets)} subnet(s) from the scan", file=sys.stderr)
+    host_cap = args.max_targets
+    if host_cap == 0 and net.version == 6:
+        host_cap = V6_DEFAULT_HOST_CAP
+
+    def _host_allowed(ip_obj) -> bool:
+        return not (exclude_nets and any(ip_obj in ex for ex in exclude_nets))
+
+    def enum_hosts() -> Iterator[str]:
+        """Base host source: net.hosts() with excludes + host cap applied."""
+        produced = 0
+        for ip in net.hosts():
+            if not _host_allowed(ip):
+                continue
+            yield str(ip)
+            produced += 1
+            if host_cap and produced >= host_cap:
+                break
+
+    def filtered_alive() -> Iterator[str]:
+        """Alive hosts (strings) with excludes + cap applied."""
+        produced = 0
+        for s in alive_hosts:  # type: ignore[union-attr]
+            if exclude_nets and not _host_allowed(ipaddress.ip_address(s)):
+                continue
+            yield s
+            produced += 1
+            if host_cap and produced >= host_cap:
+                break
+
     try:
         alive_hosts: set[str] | None = None
         if args.discover:
@@ -949,6 +1013,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 rate=args.rate,
                 threads=args.threads,
                 proxy=proxy,
+                max_hosts=host_cap,
+                exclude_nets=exclude_nets,
             ))
             if not alive_hosts:
                 print("No alive hosts discovered. Exiting.", file=sys.stderr)
@@ -959,7 +1025,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # Port-major + shuffled: a host's ports are spread the full width
                 # of the scan (len(hosts) probes apart) instead of being swept
                 # back-to-back, which is the pattern scan detectors key on.
-                hosts = list(alive_hosts) if alive_hosts is not None else [str(ip) for ip in net.hosts()]
+                hosts = list(filtered_alive()) if alive_hosts is not None else list(enum_hosts())
                 plist = list(ports)
                 random.shuffle(hosts)
                 random.shuffle(plist)
@@ -967,7 +1033,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for ip in hosts:
                         yield ip, port
             else:
-                hosts = alive_hosts if alive_hosts is not None else (str(ip) for ip in net.hosts())
+                hosts = filtered_alive() if alive_hosts is not None else enum_hosts()
                 for ip in hosts:
                     for port in ports:
                         yield ip, port

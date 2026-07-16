@@ -127,7 +127,43 @@ export const hostDevices = pgTable('host_devices', {
   typeIdx: index('idx_host_devices_type').on(table.deviceType),
 }));
 
+// Recurring scans: a cron-like schedule that re-runs the same target on an
+// interval. The server ticks once a minute (see server.js) and enqueues a new
+// scan_runs row for every schedule whose nextRunAt has passed. Options mirror
+// the scan-modal knobs and are stored as JSON so new options don't need a
+// migration. lastRunId links to the most recent launched run for the UI.
+export const scanSchedules = pgTable('scan_schedules', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  cidr: text('cidr').notNull(),
+  ports: text('ports').notNull().default('common'),
+  label: text('label'),
+  // JSON-encoded extra scan options (deep, fast, banner, threads, …).
+  options: text('options'),
+  // How often to re-run, in minutes.
+  intervalMinutes: integer('interval_minutes').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }).notNull().defaultNow(),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  lastRunId: integer('last_run_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  dueIdx: index('idx_scan_schedules_due').on(table.enabled, table.nextRunAt),
+}));
+
+// Subnets that must never be scanned. Enforced at scan-creation time (a request
+// fully inside a skip subnet is rejected) and passed to the scanner as
+// --exclude so partially-overlapping ranges have those addresses skipped
+// entirely — no wasted probes.
+export const skipSubnets = pgTable('skip_subnets', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  cidr: text('cidr').notNull().unique(),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type ScanRun = typeof scanRuns.$inferSelect;
 export type PortFinding = typeof portFindings.$inferSelect;
 export type Share = typeof shares.$inferSelect;
 export type HostDevice = typeof hostDevices.$inferSelect;
+export type ScanSchedule = typeof scanSchedules.$inferSelect;
+export type SkipSubnet = typeof skipSubnets.$inferSelect;

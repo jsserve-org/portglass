@@ -51,6 +51,9 @@ export async function POST(request: Request) {
   for (const k of ['deep', 'stealth', 'fast', 'discover', 'banner'] as const) {
     if (body[k]) (opts as any)[k] = true;
   }
+  // Persist per-scan exclude ranges so every recurring run skips them too.
+  if (typeof body.exclude === 'string' && body.exclude.trim()) opts.exclude = body.exclude.trim();
+  else if (Array.isArray(body.exclude) && body.exclude.length) opts.exclude = body.exclude;
 
   const now = new Date();
   const next = new Date(now.getTime() + intervalMinutes * 60_000);

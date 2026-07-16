@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -86,6 +86,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [deep, setDeep] = useState(false);
   const [fast, setFast] = useState(false);
   const [repeat, setRepeat] = useState("off");
+  const [exclude, setExclude] = useState("");
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -127,6 +128,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
         cidr: cidr.trim(),
         label: label.trim() || undefined,
         ports: portsValue,
+        exclude: exclude.trim() || undefined,
         discover,
         stealth,
         deep,
@@ -210,6 +212,22 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 placeholder="80,443,8080 or 1-1024"
               />
             )}
+
+            <label className="modal-label">
+              <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ranges</span>
+              <span className="modal-optional">(optional)</span>
+            </label>
+            <textarea
+              className="modal-input"
+              value={exclude}
+              onChange={(e) => setExclude(e.target.value)}
+              placeholder="Skip these sub-ranges, e.g. 10.0.5.0/24, 10.0.9.0/24"
+              rows={2}
+              style={{ resize: "vertical", fontFamily: "var(--font-mono)" }}
+            />
+            <p className="-mt-1 mb-1 text-[11px] leading-snug text-muted-foreground">
+              Addresses in these ranges are skipped for this scan only — one per line or comma-separated. Global skip subnets still apply on top.
+            </p>
 
             <label className="modal-label">
               <span className="inline-flex items-center gap-1.5"><Repeat size={12} /> Repeat</span>

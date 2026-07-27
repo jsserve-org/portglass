@@ -87,6 +87,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [fast, setFast] = useState(false);
   const [repeat, setRepeat] = useState("off");
   const [exclude, setExclude] = useState("");
+  const [excludePorts, setExcludePorts] = useState("");
 
   const portsValue = preset === "custom" ? customPorts : preset;
 
@@ -128,6 +129,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
         cidr: cidr.trim(),
         label: label.trim() || undefined,
         ports: portsValue,
+        excludePorts: excludePorts.trim() || undefined,
         exclude: exclude.trim() || undefined,
         discover,
         stealth,
@@ -212,6 +214,20 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 placeholder="80,443,8080 or 1-1024"
               />
             )}
+
+            <label className="modal-label">
+              <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ports</span>
+              <span className="modal-optional">(optional)</span>
+            </label>
+            <input
+              className="modal-input"
+              value={excludePorts}
+              onChange={(e) => setExcludePorts(e.target.value)}
+              placeholder="5060,5061 or 8000-8100"
+            />
+            <p className="-mt-1 mb-1 text-[11px] leading-snug text-muted-foreground">
+              These ports are removed from this scan before targets are generated, so they are never probed.
+            </p>
 
             <label className="modal-label">
               <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ranges</span>

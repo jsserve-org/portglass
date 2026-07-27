@@ -315,6 +315,17 @@ def parse_ports(spec: str) -> list[int]:
     return sorted(ports)
 
 
+def filter_excluded_ports(ports: Sequence[int], spec: str) -> list[int]:
+    """Remove user-excluded ports before any scan targets are generated."""
+    if not spec.strip():
+        return list(ports)
+    excluded = set(parse_ports(spec))
+    remaining = [port for port in ports if port not in excluded]
+    if not remaining:
+        raise argparse.ArgumentTypeError("all selected ports were excluded")
+    return remaining
+
+
 def parse_proxy(proxy_str: str | None) -> tuple[str, int] | None:
     if not proxy_str:
         return None
@@ -883,6 +894,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--discover", action="store_true", help="Quickly discover alive hosts first, then full-scan only those")
     p.add_argument("--discover-ports", default="22,80,443,445,3389", help="Ports used for host discovery (default: 22,80,443,445,3389)")
     p.add_argument("--discover-timeout", type=float, default=0.6, help="Discovery connect timeout (default: 0.6)")
+    p.add_argument("--exclude-ports", default="", help="Comma-separated ports/ranges to never probe (e.g. 5060,5061,8000-8100)")
     p.add_argument("--exclude", default="", help="Comma-separated CIDRs to skip entirely (e.g. skip subnets); addresses inside them are never probed")
     p.add_argument("--max-targets", type=int, default=0, help="Cap the number of hosts enumerated (0 = auto: unlimited for IPv4, %d for IPv6 to keep huge ranges bounded)" % V6_DEFAULT_HOST_CAP)
     p.add_argument("--yes-i-own-this-network", action="store_true", help="Required acknowledgement for authorized scanning")
@@ -964,7 +976,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception:
         pass
 
-    ports = parse_ports(args.ports)
+    try:
+        selected_ports = parse_ports(args.ports)
+        ports = filter_excluded_ports(selected_ports, args.exclude_ports)
+    except (ValueError, argparse.ArgumentTypeError) as exc:
+        print(f"Invalid port selection: {exc}", file=sys.stderr)
+        return 2
+    if len(ports) != len(selected_ports):
+        print(
+            f"Excluding {len(selected_ports) - len(ports)} selected port(s); "
+            f"{len(ports)} port(s) remain",
+            file=sys.stderr,
+        )
     net = ipaddress.ip_network(args.cidr, strict=False)
 
     proxy = parse_proxy(args.proxy)
@@ -1052,21 +1075,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         alive_hosts: set[str] | None = None
         if args.discover:
-            discover_ports = parse_ports(args.discover_ports)
-            alive_hosts = asyncio.run(discover_hosts(
-                args.cidr,
-                discover_ports,
-                concurrency=args.concurrency,
-                timeout=args.discover_timeout,
-                rate=args.rate,
-                threads=args.threads,
-                proxy=proxy,
-                max_hosts=host_cap,
-                exclude_nets=exclude_nets,
-            ))
-            if not alive_hosts:
-                print("No alive hosts discovered. Exiting.", file=sys.stderr)
-                return 0
+            excluded_ports = set(parse_ports(args.exclude_ports)) if args.exclude_ports.strip() else set()
+            discover_ports = [p for p in parse_ports(args.discover_ports) if p not in excluded_ports]
+            if not discover_ports:
+                print("All discovery ports are excluded; continuing without host discovery.", file=sys.stderr)
+            else:
+                alive_hosts = asyncio.run(discover_hosts(
+                    args.cidr,
+                    discover_ports,
+                    concurrency=args.concurrency,
+                    timeout=args.discover_timeout,
+                    rate=args.rate,
+                    threads=args.threads,
+                    proxy=proxy,
+                    max_hosts=host_cap,
+                    exclude_nets=exclude_nets,
+                ))
+                if not alive_hosts:
+                    print("No alive hosts discovered. Exiting.", file=sys.stderr)
+                    return 0
 
         def target_iter() -> Iterator[tuple[str, int]]:
             if args.stealth:

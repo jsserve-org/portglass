@@ -41,6 +41,40 @@ class FakeConnection:
 
 
 class ScannerResilienceTests(unittest.TestCase):
+    def test_excluded_ports_are_removed_before_target_generation(self):
+        self.assertEqual(
+            fast_scan.filter_excluded_ports([80, 443, 5060, 5061], "5060,5061"),
+            [80, 443],
+        )
+
+    def test_excluding_every_selected_port_is_rejected(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            fast_scan.filter_excluded_ports([5060], "5060")
+
+    def test_main_never_generates_targets_for_excluded_port(self):
+        observed_ports = []
+
+        async def record_scan_batch(batch, **kwargs):
+            observed_ports.extend(port for _, port in batch)
+            for _ in batch:
+                kwargs["on_attempt"]()
+            return []
+
+        with patch.object(fast_scan, "scan_batch", record_scan_batch):
+            result = fast_scan.main([
+                "127.0.0.0/30",
+                "--ports", "80,5060",
+                "--exclude-ports", "5060",
+                "--threads", "1",
+                "--concurrency", "2",
+                "--rate", "0",
+                "--no-csv",
+                "--yes-i-own-this-network",
+            ])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(observed_ports, [80, 80])
+
     def test_worker_keeps_draining_after_a_batch_failure(self):
         batches = queue.Queue()
         batches.put([("192.0.2.1", 80)])

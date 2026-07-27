@@ -54,6 +54,10 @@ export async function POST(request: Request) {
   // Persist per-scan exclude ranges so every recurring run skips them too.
   if (typeof body.exclude === 'string' && body.exclude.trim()) opts.exclude = body.exclude.trim();
   else if (Array.isArray(body.exclude) && body.exclude.length) opts.exclude = body.exclude;
+  // Persist excluded ports too, so recurring runs never probe them.
+  if (typeof body.excludePorts === 'string' && body.excludePorts.trim()) {
+    opts.excludePorts = body.excludePorts.trim();
+  }
 
   const now = new Date();
   const next = new Date(now.getTime() + intervalMinutes * 60_000);

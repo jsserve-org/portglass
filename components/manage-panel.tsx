@@ -27,6 +27,12 @@ function humanInterval(min: number): string {
   return `every ${min}m`;
 }
 
+function nextRunLabel(schedule: Schedule): string {
+  const next = new Date(schedule.nextRunAt);
+  if (schedule.enabled && next.getTime() <= Date.now()) return "due now";
+  return next.toLocaleString();
+}
+
 async function jsonFetch(url: string, init?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...init });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
@@ -127,7 +133,7 @@ export default function ManagePanel() {
                         {s.label || s.cidr}
                       </span>
                       <span className="block truncate font-mono text-[10px] text-[var(--text-dim)]">
-                        {s.label ? `${s.cidr} · ` : ""}{humanInterval(s.intervalMinutes)} · next {new Date(s.nextRunAt).toLocaleString()}
+                        {s.label ? `${s.cidr} · ` : ""}{humanInterval(s.intervalMinutes)} · next {nextRunLabel(s)}
                       </span>
                     </span>
                     <button

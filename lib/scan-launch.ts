@@ -26,6 +26,8 @@ export type ScanInput = {
   readTimeout?: number | string;
   verifyRetries?: number | string;
   proxy?: string;
+  // Ports/ranges to omit from this scan entirely (e.g. "5060,5061,8000-8100").
+  excludePorts?: string;
   // Per-scan ranges to skip (comma/space/newline separated, or an array). These
   // are excluded for THIS scan only, on top of the global skip-subnet list.
   exclude?: string | string[];
@@ -45,6 +47,43 @@ function parseExcludeList(v: unknown): string[] {
   if (!v) return [];
   const parts = Array.isArray(v) ? v : String(v).split(/[\s,]+/);
   return [...new Set(parts.map((s) => String(s).trim()).filter(Boolean))];
+}
+
+/** Validate and normalize the numeric port/range exclusion syntax. */
+function normalizeExcludedPorts(v: unknown): { spec: string; error?: string } {
+  const chunks = String(v ?? '').trim().split(/[\s,]+/).filter(Boolean);
+  if (!chunks.length) return { spec: '' };
+
+  for (const chunk of chunks) {
+    const match = chunk.match(/^(\d+)(?:-(\d+))?$/);
+    if (!match) {
+      return { spec: '', error: `Invalid excluded port: ${chunk}. Use numbers or ranges such as 5060,5061,8000-8100.` };
+    }
+    const start = Number(match[1]);
+    const end = Number(match[2] ?? match[1]);
+    if (start < 1 || start > 65535 || end < 1 || end > 65535) {
+      return { spec: '', error: `Excluded port is outside 1-65535: ${chunk}` };
+    }
+  }
+  return { spec: [...new Set(chunks)].join(',') };
+}
+
+/** Expand a numeric selection for overlap checks; named presets return null. */
+function expandNumericPortSpec(spec: string): Set<number> | null {
+  const normalized = spec.trim().toLowerCase();
+  if (normalized === 'all') return new Set(Array.from({ length: 65535 }, (_, i) => i + 1));
+  const chunks = normalized.split(/[\s,]+/).filter(Boolean);
+  const ports = new Set<number>();
+  for (const chunk of chunks) {
+    const match = chunk.match(/^(\d+)(?:-(\d+))?$/);
+    if (!match) return null;
+    let start = Number(match[1]);
+    let end = Number(match[2] ?? match[1]);
+    if (start > end) [start, end] = [end, start];
+    if (start < 1 || end > 65535) return null;
+    for (let port = start; port <= end; port++) ports.add(port);
+  }
+  return ports;
 }
 
 /**
@@ -67,6 +106,11 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
     }
   }
 
+  const excludedPorts = normalizeExcludedPorts(input.excludePorts);
+  if (excludedPorts.error) {
+    return { ok: false, error: excludedPorts.error, status: 400 };
+  }
+
   // Refuse a scan that lands entirely inside a skip subnet — it would waste the
   // whole run's resources for zero useful findings.
   if (await isFullyCoveredBySkip(cidr)) {
@@ -74,6 +118,13 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
   }
 
   const ports = String(input.ports ?? 'common').trim() || 'common';
+  if (excludedPorts.spec) {
+    const selected = expandNumericPortSpec(ports);
+    const excluded = expandNumericPortSpec(excludedPorts.spec);
+    if (selected && excluded && [...selected].every((port) => excluded.has(port))) {
+      return { ok: false, error: 'Every selected port is excluded. Leave at least one port to scan.', status: 400 };
+    }
+  }
   const label = String(input.label ?? '').trim().slice(0, 80) || null;
   const deep = !!input.deep;
   // Defaults are deliberately gentle: this app commonly runs on a small shared
@@ -117,6 +168,7 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
   if (fast) args.push('--fast');
   if (proxy) args.push('--proxy', proxy);
   if (discover) args.push('--discover');
+  if (excludedPorts.spec) args.push('--exclude-ports', excludedPorts.spec);
 
   // Skip both the user's per-scan exclude ranges and any global skip subnets
   // that overlap this range, so the scanner drops those addresses unprobed.

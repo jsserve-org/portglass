@@ -17,10 +17,15 @@ const { WebSocketServer } = require('ws');
 const port = parseInt(process.env.PORT || '51111', 10);
 const hostname = process.env.HOSTNAME || '0.0.0.0';
 
-// Secret shared with the /api/internal/tick route (same process, so a random
-// value in env is enough) so recurring scans can only be fired in-process.
+// Secret shared with the /api/internal/tick route. Derive it from an env value
+// that exists before Next loads: production route bundles may not observe a
+// process.env key added dynamically here, which previously made every scheduler
+// tick return 403 and left next_run_at stuck in the past.
 process.env.INTERNAL_TICK_SECRET =
-  process.env.INTERNAL_TICK_SECRET || crypto.randomBytes(24).toString('hex');
+  process.env.INTERNAL_TICK_SECRET ||
+  (process.env.SESSION_SECRET
+    ? crypto.createHash('sha256').update(`portglass-scheduler:${process.env.SESSION_SECRET}`).digest('hex')
+    : crypto.randomBytes(24).toString('hex'));
 
 const app = next({ dev: false, hostname, port });
 const handle = app.getRequestHandler();
@@ -170,12 +175,15 @@ runMigrations().then(() => app.prepare()).then(() => {
     if (schedTicking) return;
     schedTicking = true;
     try {
-      await fetch(`http://127.0.0.1:${port}/api/internal/tick`, {
+      const res = await fetch(`http://127.0.0.1:${port}/api/internal/tick`, {
         method: 'POST',
         headers: { 'x-internal-secret': process.env.INTERNAL_TICK_SECRET },
       });
-    } catch {
-      /* transient; try again next minute */
+      if (!res.ok) {
+        console.error(`Schedule tick rejected: HTTP ${res.status} ${await res.text()}`);
+      }
+    } catch (err) {
+      console.error('Schedule tick request failed:', err);
     } finally {
       schedTicking = false;
     }
@@ -184,5 +192,8 @@ runMigrations().then(() => app.prepare()).then(() => {
 
   server.listen(port, () => {
     console.log(`> Portglass ready on http://${hostname}:${port} (WS: /api/ws/scans)`);
+    // Reconcile overdue schedules immediately after a restart instead of
+    // displaying a stale past date until the first minute interval.
+    scheduleTick();
   });
 });

@@ -204,7 +204,7 @@ _RDP_PROTOCOLS = {0: "standard-rdp", 1: "TLS", 2: "CredSSP/NLA", 8: "RDSTLS", 16
 async def rdp_probe(reader, writer, read_timeout: float) -> str:
     """Send an RDP X.224 negotiation request and summarise the response."""
     writer.write(_RDP_NEG_REQUEST)
-    await writer.drain()
+    await asyncio.wait_for(writer.drain(), timeout=read_timeout)
     data = await asyncio.wait_for(reader.read(512), timeout=read_timeout)
     if len(data) >= 2 and data[0] == 0x03 and data[1] == 0x00:
         # TPKT + X.224 Connection Confirm; optional RDP negotiation response
@@ -333,7 +333,7 @@ async def socks5_connect(proxy_host: str, proxy_port: int, target_ip: str, targe
     try:
         # Greeting: ver 5, 1 method, no-auth (0x00)
         writer.write(bytes([0x05, 0x01, 0x00]))
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
         resp = await asyncio.wait_for(reader.readexactly(2), timeout=timeout)
         if resp[0] != 0x05 or resp[1] != 0x00:
             raise ConnectionError(f"SOCKS5 auth negotiation failed: {resp.hex()}")
@@ -342,7 +342,7 @@ async def socks5_connect(proxy_host: str, proxy_port: int, target_ip: str, targe
         ip_bytes = socket.inet_aton(target_ip)
         req = bytes([0x05, 0x01, 0x00, 0x01]) + ip_bytes + struct.pack(">H", target_port)
         writer.write(req)
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), timeout=timeout)
 
         # Read reply header (first 4 bytes)
         header = await asyncio.wait_for(reader.readexactly(4), timeout=timeout)
@@ -360,11 +360,7 @@ async def socks5_connect(proxy_host: str, proxy_port: int, target_ip: str, targe
             await asyncio.wait_for(reader.readexactly(16 + 2), timeout=timeout)
         return reader, writer
     except Exception:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:
-            pass
+        await _close_writer(writer)
         raise
 
 
@@ -372,6 +368,17 @@ async def _open_connection(ip: str, port: int, timeout: float, proxy: tuple[str,
     if proxy is None:
         return await asyncio.wait_for(asyncio.open_connection(ip, port), timeout=timeout)
     return await socks5_connect(proxy[0], proxy[1], ip, port, timeout=timeout)
+
+
+async def _close_writer(writer, timeout: float = 1.0) -> None:
+    """Close a stream without letting a broken peer stall its worker forever."""
+    writer.close()
+    try:
+        await asyncio.wait_for(writer.wait_closed(), timeout=timeout)
+    except Exception:
+        # The socket is already closing. A timeout/error here is cleanup noise,
+        # not a reason to strand the whole scan batch.
+        pass
 
 
 # IPv6 ranges are astronomically large (a single /64 has 2^64 addresses), so we
@@ -470,7 +477,7 @@ async def scan_once(
                 f"Accept: */*\r\nConnection: close\r\n\r\n"
             )
             writer.write(probe.encode())
-            await writer.drain()
+            await asyncio.wait_for(writer.drain(), timeout=read_timeout)
             # Servers (esp. over TLS) can take a while, so use the dedicated read
             # window, not the connect timeout, which previously truncated HTTPS
             # responses to ~0.8s.
@@ -525,11 +532,7 @@ async def scan_once(
         return None
     finally:
         if writer is not None:
-            writer.close()
-            try:
-                await writer.wait_closed()
-            except Exception:
-                pass
+            await _close_writer(writer)
 
 
 async def verify_open(
@@ -578,10 +581,22 @@ async def scan_batch(
     sem = asyncio.Semaphore(concurrency)
     results: list[Finding] = []
     results_lock = asyncio.Lock()
+    unexpected_errors: list[str] = []
 
     async def runner(ip: str, port: int) -> None:
         async with sem:
-            finding = await verify_open(ip, port, timeout, limiter, verify_retries, banner, proxy, read_timeout, jitter, on_attempt=on_attempt)
+            try:
+                finding = await verify_open(
+                    ip, port, timeout, limiter, verify_retries, banner, proxy,
+                    read_timeout, jitter, on_attempt=on_attempt,
+                )
+            except Exception as exc:
+                # One malformed response or platform-specific socket error must
+                # not cancel asyncio.gather(), kill the OS worker, and deadlock
+                # the bounded producer queue.
+                if len(unexpected_errors) < 3:
+                    unexpected_errors.append(f"{ip}:{port}: {exc!r}")
+                return
             if finding is not None:
                 async with results_lock:
                     results.append(finding)
@@ -592,6 +607,12 @@ async def scan_batch(
     for i in range(0, len(batch), chunk_size):
         chunk = batch[i:i + chunk_size]
         await asyncio.gather(*(runner(ip, port) for ip, port in chunk))
+    if unexpected_errors:
+        print(
+            f"\nIgnored {len(unexpected_errors)} unexpected probe error(s) in batch; "
+            f"first: {unexpected_errors[0]}",
+            file=sys.stderr,
+        )
     return results
 
 
@@ -635,12 +656,16 @@ async def discover_hosts(
             await limiter.wait()
             async with attempted_lock:
                 attempted += 1
+            writer = None
             try:
-                await _open_connection(ip, port, timeout, proxy)
+                _, writer = await _open_connection(ip, port, timeout, proxy)
                 async with alive_lock:
                     alive.add(ip)
             except Exception:
                 pass
+            finally:
+                if writer is not None:
+                    await _close_writer(writer)
 
     # Process in chunks to avoid creating millions of coroutines at once.
     chunk_size = min(concurrency * 4, 4096)
@@ -665,24 +690,39 @@ def writerow_safe(csv_writer: csv.writer | None, csv_file, lock: threading.Lock,
 def db_insert_findings(db_conn, db_lock: threading.Lock, run_id: int | None, findings: Sequence[Finding]) -> None:
     if db_conn is None or not findings:
         return
-    with db_lock:
-        with db_conn.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner, headers, service, product)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (run_id, ip, port) DO UPDATE SET
-                  state = EXCLUDED.state,
-                  latency_ms = EXCLUDED.latency_ms,
-                  banner = EXCLUDED.banner,
-                  headers = EXCLUDED.headers,
-                  service = EXCLUDED.service,
-                  product = EXCLUDED.product,
-                  observed_at = now()
-                """,
-                [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner, f.headers, f.service or None, f.product or None) for f in findings],
-            )
-        db_conn.commit()
+    last_error = None
+    for attempt in range(3):
+        try:
+            with db_lock:
+                with db_conn.cursor() as cur:
+                    cur.executemany(
+                        """
+                        INSERT INTO port_findings (run_id, ip, port, state, latency_ms, banner, headers, service, product)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (run_id, ip, port) DO UPDATE SET
+                          state = EXCLUDED.state,
+                          latency_ms = EXCLUDED.latency_ms,
+                          banner = EXCLUDED.banner,
+                          headers = EXCLUDED.headers,
+                          service = EXCLUDED.service,
+                          product = EXCLUDED.product,
+                          observed_at = now()
+                        """,
+                        [(run_id, f.ip, f.port, f.state, f.latency_ms, f.banner, f.headers, f.service or None, f.product or None) for f in findings],
+                    )
+                db_conn.commit()
+            return
+        except Exception as exc:
+            last_error = exc
+            # psycopg leaves the connection in an aborted transaction after any
+            # statement error. Without rollback, every worker and heartbeat
+            # fails afterward; the old workers then exited and the queue froze.
+            with db_lock:
+                with contextlib.suppress(Exception):
+                    db_conn.rollback()
+            if attempt < 2:
+                time.sleep(0.1 * (attempt + 1))
+    raise RuntimeError(f"database insert failed after 3 attempts: {last_error}") from last_error
 
 
 def worker(
@@ -739,8 +779,11 @@ def worker(
             with stats_lock:
                 stats["open"] += len(findings)
         except Exception as exc:
-            print(f"\nWorker {worker_id} error: {exc}", file=sys.stderr)
-            raise
+            # Keep consuming work after a bad batch. Raising here silently killed
+            # the daemon thread; after enough random failures all workers were
+            # gone and the producer blocked forever when its bounded queue filled
+            # (typically around 4% on the large scans seen in production).
+            print(f"\nWorker {worker_id} batch error (continuing): {exc!r}", file=sys.stderr)
         finally:
             batches.task_done()
 
@@ -789,6 +832,11 @@ def db_progress_thread(
             db_conn.commit()
         except Exception as exc:  # noqa: BLE001 - heartbeat must never raise
             print(f"\nprogress heartbeat failed: {exc}", file=sys.stderr)
+            # Recover the shared psycopg connection from an aborted transaction
+            # so one transient heartbeat failure does not poison later inserts.
+            with db_lock:
+                with contextlib.suppress(Exception):
+                    db_conn.rollback()
         if done:
             return
 

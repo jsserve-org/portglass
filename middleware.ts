@@ -22,6 +22,10 @@ export function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/api/auth/') ||
     pathname.startsWith('/_next/') ||
+    // Called only from server.js over loopback; the handler verifies its
+    // derived internal secret. Let it reach that stronger check without a
+    // browser session cookie.
+    pathname === '/api/internal/tick' ||
     pathname === '/api/me' ||
     pathname === '/api/health' ||
     pathname.startsWith('/share/') ||

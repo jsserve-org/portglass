@@ -326,6 +326,30 @@ def filter_excluded_ports(ports: Sequence[int], spec: str) -> list[int]:
     return remaining
 
 
+# A compact, high-signal seed set for dynamic scans.  It intentionally favors
+# widely deployed administration, web, mail, database, and remote-access
+# services.  The full selected-port sweep runs only for hosts that answer one
+# of these probes, so this is fast on sparse address ranges but can miss a host
+# that exposes only an unusual port.
+DYNAMIC_SEED_PORTS = (
+    21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 554, 993, 995,
+    1433, 3306, 3389, 5432, 5900, 6379, 8000, 8080, 8443, 8888, 9200, 27017,
+)
+
+
+def dynamic_seed_ports(ports: Sequence[int]) -> list[int]:
+    """Pick the fast discovery seed from the selected, already-safe ports.
+
+    Keep the mode useful for a custom selection that contains no conventional
+    ports by falling back to its first few selected ports.  Callers must pass
+    the post-exclusion port list, which guarantees excluded ports never appear
+    in either the discovery or full-scan phase.
+    """
+    selected = list(ports)
+    seed = [port for port in selected if port in DYNAMIC_SEED_PORTS]
+    return seed or selected[:12]
+
+
 def parse_proxy(proxy_str: str | None) -> tuple[str, int] | None:
     if not proxy_str:
         return None
@@ -889,9 +913,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-csv", action="store_true", help="Do not write CSV output; useful with --db-url")
     p.add_argument("--batch-size", type=int, default=4096, help="Internal work batch size (default: 4096)")
     p.add_argument("--run-id", type=int, default=None, help="Existing scan_runs id to use (skip INSERT)")
-    p.add_argument("--resume-offset", type=int, default=0, help="Skip the first N targets when resuming an interrupted scan so it continues instead of restarting (deterministic order only; ignored for --stealth/--discover)")
+    p.add_argument("--resume-offset", type=int, default=0, help="Skip the first N targets when resuming an interrupted scan so it continues instead of restarting (deterministic order only; ignored for --stealth/--discover/--dynamic)")
     p.add_argument("--proxy", default=os.environ.get("SCAN_PROXY"), help="SOCKS5 proxy host:port (also SCAN_PROXY env var)")
     p.add_argument("--discover", action="store_true", help="Quickly discover alive hosts first, then full-scan only those")
+    p.add_argument("--dynamic", action="store_true", help="Probe high-signal common ports first, then scan selected ports only on responsive hosts")
     p.add_argument("--discover-ports", default="22,80,443,445,3389", help="Ports used for host discovery (default: 22,80,443,445,3389)")
     p.add_argument("--discover-timeout", type=float, default=0.6, help="Discovery connect timeout (default: 0.6)")
     p.add_argument("--exclude-ports", default="", help="Comma-separated ports/ranges to never probe (e.g. 5060,5061,8000-8100)")
@@ -911,6 +936,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.fast and args.stealth:
         print("Choose either --fast or --stealth, not both.", file=sys.stderr)
+        return 2
+    if args.discover and args.dynamic:
+        print("Choose either --discover or --dynamic, not both.", file=sys.stderr)
         return 2
 
     if args.fast:
@@ -1074,7 +1102,28 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         alive_hosts: set[str] | None = None
-        if args.discover:
+        if args.dynamic:
+            seed_ports = dynamic_seed_ports(ports)
+            print(
+                f"Dynamic mode phase 1: probing {len(seed_ports)} high-signal port(s) first; "
+                "the full selected-port scan will run only on responsive hosts.",
+                file=sys.stderr,
+            )
+            alive_hosts = asyncio.run(discover_hosts(
+                args.cidr,
+                seed_ports,
+                concurrency=args.concurrency,
+                timeout=min(args.discover_timeout, args.timeout),
+                rate=args.rate,
+                threads=args.threads,
+                proxy=proxy,
+                max_hosts=host_cap,
+                exclude_nets=exclude_nets,
+            ))
+            if not alive_hosts:
+                print("Dynamic mode found no responsive hosts. Exiting.", file=sys.stderr)
+                return 0
+        elif args.discover:
             excluded_ports = set(parse_ports(args.exclude_ports)) if args.exclude_ports.strip() else set()
             discover_ports = [p for p in parse_ports(args.discover_ports) if p not in excluded_ports]
             if not discover_ports:
@@ -1117,11 +1166,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         # Resume support: when continuing an interrupted run we skip the targets
         # already covered so we don't redo hours of work. The target order is
-        # only reproducible for a plain scan; --stealth shuffles and --discover
-        # recomputes the alive set, so we can't offset those (full re-scan, which
+        # only reproducible for a plain scan; --stealth shuffles while --discover
+        # and --dynamic recompute the responsive host set, so we can't offset
+        # those (full re-scan, which
         # is still idempotent). attempted is pre-seeded so progress/% continue.
         resume_offset = 0
-        if args.resume_offset > 0 and not args.stealth and not args.discover:
+        if args.resume_offset > 0 and not args.stealth and not args.discover and not args.dynamic:
             resume_offset = min(args.resume_offset, total)
         if resume_offset > 0:
             print(f"Resuming: skipping {resume_offset:,}/{total:,} already-scanned targets", file=sys.stderr)

@@ -18,6 +18,7 @@ export type ScanInput = {
   stealth?: boolean;
   fast?: boolean;
   discover?: boolean;
+  dynamic?: boolean;
   banner?: boolean;
   threads?: number | string;
   concurrency?: number | string;
@@ -140,7 +141,10 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
   const verifyRetries = fast ? 0 : clampInt(input.verifyRetries, deep ? 1 : 0, 0, 5);
   const banner = !fast && (!!input.banner || deep);
   const proxy = String(input.proxy ?? '').trim();
-  const discover = !!input.discover;
+  // Dynamic discovery is an opinionated, larger seed set.  Favor it when a
+  // stale UI or schedule happens to send both flags so argv stays unambiguous.
+  const dynamic = !!input.dynamic;
+  const discover = !!input.discover && !dynamic;
   const readTimeout = clampFloat(input.readTimeout, deep ? 5.0 : 3.0, 0.5, 15);
 
   const [run] = await db
@@ -168,6 +172,7 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
   if (fast) args.push('--fast');
   if (proxy) args.push('--proxy', proxy);
   if (discover) args.push('--discover');
+  if (dynamic) args.push('--dynamic');
   if (excludedPorts.spec) args.push('--exclude-ports', excludedPorts.spec);
 
   // Skip both the user's per-scan exclude ranges and any global skip subnets

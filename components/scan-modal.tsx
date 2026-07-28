@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat, Ban } from "lucide-react";
+import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat, Ban, Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +82,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const [error, setError] = useState("");
   const [proxy, setProxy] = useState("");
   const [discover, setDiscover] = useState(false);
+  const [dynamic, setDynamic] = useState(false);
   const [stealth, setStealth] = useState(false);
   const [deep, setDeep] = useState(false);
   const [fast, setFast] = useState(false);
@@ -106,6 +107,14 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
   const enableDeep = (v: boolean) => {
     setDeep(v);
     if (v) setFast(false);
+  };
+  const enableDiscover = (v: boolean) => {
+    setDiscover(v);
+    if (v) setDynamic(false);
+  };
+  const enableDynamic = (v: boolean) => {
+    setDynamic(v);
+    if (v) setDiscover(false);
   };
 
   async function handleSubmit(e: React.FormEvent) {
@@ -132,6 +141,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
         excludePorts: excludePorts.trim() || undefined,
         exclude: exclude.trim() || undefined,
         discover,
+        dynamic,
         stealth,
         deep,
         fast,
@@ -283,10 +293,17 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               />
               <OptionRow
                 checked={discover}
-                onChange={setDiscover}
+                onChange={enableDiscover}
                 icon={<Crosshair />}
                 title="Discover alive hosts first"
                 desc="Fast pre-scan over common ports, then full scan only the responsive IPs. Faster on sparse ranges."
+              />
+              <OptionRow
+                checked={dynamic}
+                onChange={enableDynamic}
+                icon={<Radar />}
+                title="Dynamic port scan"
+                desc="Probe a broader high-signal seed set first, then sweep your selected ports only on responsive hosts. Great for sparse ranges; a host exposing only unusual ports can be missed. Excluded ports are skipped in both phases."
               />
             </div>
 

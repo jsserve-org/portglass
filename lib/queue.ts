@@ -36,7 +36,7 @@ async function launchRun(run: ScanRun): Promise<void> {
     return;
   }
 
-  const stealthOrDiscover = args.includes('--stealth') || args.includes('--discover');
+  const stealthOrDiscover = args.includes('--stealth') || args.includes('--discover') || args.includes('--dynamic');
   if (run.attemptedTargets != null && !stealthOrDiscover && !args.includes('--resume-offset')) {
     const offset = Math.max(0, run.attemptedTargets - RESUME_MARGIN);
     if (offset > 0) args = [...args, '--resume-offset', String(offset)];

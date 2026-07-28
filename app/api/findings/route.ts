@@ -11,7 +11,7 @@ import { softwareMatchSql } from '@/lib/software';
 const DEVICE_TYPES = DEVICE_ORDER as unknown as readonly [DeviceType, ...DeviceType[]];
 
 const querySchema = z.object({
-  q: z.string().optional().default(''),
+  q: z.string().trim().max(160).optional().default(''),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
@@ -30,7 +30,35 @@ export async function GET(request: Request) {
   const query = querySchema.parse(Object.fromEntries(searchParams));
   const offset = (query.page - 1) * query.pageSize;
   const port = query.port ?? null;
-  const needle = query.q ? `%${query.q}%` : null;
+  // Treat separate words as separate constraints instead of one opaque
+  // substring. This makes "nginx 443" predictably narrow to hosts matching
+  // both terms, while explicit port:443 avoids accidental IP-text matches.
+  const searchTerms = query.q.split(/\s+/).filter(Boolean).slice(0, 8);
+  const searchFilter = searchTerms.length
+    ? sql.join(searchTerms.map((term) => {
+        const portToken = term.match(/^port:(\d{1,5})$/i);
+        if (portToken) {
+          const value = Number(portToken[1]);
+          return value >= 1 && value <= 65535 ? sql`AND port = ${value}` : sql`AND FALSE`;
+        }
+        const serviceToken = term.match(/^service:(.+)$/i);
+        const value = serviceToken?.[1] || term;
+        const needle = `%${value}%`;
+        if (/^\d{1,5}$/.test(term)) {
+          const numeric = Number(term);
+          return numeric >= 1 && numeric <= 65535
+            ? sql`AND (port = ${numeric} OR ip ILIKE ${needle})`
+            : sql`AND ip ILIKE ${needle}`;
+        }
+        return sql`AND (
+          ip ILIKE ${needle}
+          OR COALESCE(banner, '') ILIKE ${needle}
+          OR COALESCE(headers, '') ILIKE ${needle}
+          OR COALESCE(service, '') ILIKE ${needle}
+          OR COALESCE(product, '') ILIKE ${needle}
+        )`;
+      }), sql` `)
+    : sql``;
   // Junk (Fortinet noise, junk ports) is purged from the DB and blocked at scan
   // time; this is a belt-and-suspenders filter so any stragglers never surface.
   const notJunk = sql`NOT ${junkMatchSql()}`;
@@ -82,14 +110,7 @@ export async function GET(request: Request) {
           ${deviceFilter}
           ${asnFilter}
           ${softwareFilter}
-          AND (
-            ${needle}::text IS NULL
-            OR ip ILIKE ${needle}
-            OR COALESCE(banner, '') ILIKE ${needle}
-            OR COALESCE(headers, '') ILIKE ${needle}
-            OR COALESCE(service, '') ILIKE ${needle}
-            OR COALESCE(product, '') ILIKE ${needle}
-          )
+          ${searchFilter}
         ORDER BY ip, observed_at DESC
       ) one_per_ip
       ORDER BY "observedAt" DESC
@@ -107,14 +128,7 @@ export async function GET(request: Request) {
       ${deviceFilter}
       ${asnFilter}
       ${softwareFilter}
-      AND (
-        ${needle}::text IS NULL
-        OR ip ILIKE ${needle}
-        OR COALESCE(banner, '') ILIKE ${needle}
-        OR COALESCE(headers, '') ILIKE ${needle}
-        OR COALESCE(service, '') ILIKE ${needle}
-        OR COALESCE(product, '') ILIKE ${needle}
-      )
+      ${searchFilter}
   `;
 
   // The search view auto-refreshes; identical queries (same filter + page) are

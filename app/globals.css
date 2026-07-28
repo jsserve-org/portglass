@@ -262,6 +262,14 @@ body::before {
 
 .search-btn:hover { background: var(--signal-dim); }
 
+.search-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin-right: 4px;
+  background: transparent; border: 0; border-radius: 2px;
+  color: var(--text-muted); cursor: pointer;
+}
+.search-clear:hover { background: var(--bg-elevated); color: var(--text); }
+
 .search-tags {
   display: flex; align-items: center; gap: 8px;
   margin-top: 18px; font-size: 12px; color: var(--text-muted);
@@ -292,6 +300,11 @@ body::before {
   border-color: var(--signal);
   color: var(--signal);
 }
+
+.search-help {
+  margin: 12px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.45;
+}
+.search-help code { color: var(--beam); font-family: var(--font-mono); }
 
 /* ============ Stats Bar ============ */
 .stats-bar {
@@ -348,6 +361,22 @@ body::before {
 }
 
 .filter-panel { margin-bottom: 32px; }
+.filter-panel-compact { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.filter-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.filter-heading-row h4 { flex: 1; }
+.filter-heading-row .clear-filter {
+  width: auto; margin: 0 0 8px; padding: 3px 0; border: 0; color: var(--signal);
+}
+.filter-input-label {
+  display: block; margin-bottom: 6px; font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim);
+}
+.filter-port-input {
+  width: 100%; height: 36px; padding: 0 10px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 2px; color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; outline: none;
+}
+.filter-port-input:focus { border-color: var(--signal); box-shadow: 0 0 0 1px rgba(52, 224, 126, .2); }
 
 .filter-panel h4 {
   font-family: var(--font-mono);
@@ -483,6 +512,21 @@ body::before {
 
 /* ============ Results Main ============ */
 .results-main { padding: 26px 30px; min-width: 0; }
+
+.active-filter-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  margin-bottom: 14px; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px;
+}
+.active-filter {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 220px;
+  padding: 4px 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(52, 224, 126, .08); border: 1px solid rgba(52, 224, 126, .3);
+  border-radius: 2px; color: var(--signal-hover); font: inherit; cursor: pointer;
+}
+.active-filter:hover { border-color: var(--signal); }
+.active-filter svg { flex-shrink: 0; }
+.active-filter-clear { padding: 3px 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.active-filter-clear:hover { color: var(--text); }
 
 .results-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -1172,7 +1216,7 @@ a.results-export { text-decoration: none; }
   color: var(--text); font-family: var(--font-mono); font-size: 13px;
 }
 
-/* Scan status filter chips — toggle a status off to hide those scans. */
+/* Scan status filter chips — select one or more statuses to include. */
 .scan-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; }
 .scan-filter-chip {
   display: inline-flex; align-items: center; gap: 7px;
@@ -1184,9 +1228,8 @@ a.results-export { text-decoration: none; }
 .scan-filter-chip:hover { border-color: var(--border-light); }
 .scan-filter-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--chip-c, var(--text-muted)); flex-shrink: 0; }
 .scan-filter-count { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.scan-filter-chip.off { opacity: 0.4; }
-.scan-filter-chip.off .scan-filter-dot { background: var(--text-dim); }
-.scan-filter-chip.off:hover { opacity: 0.65; }
+.scan-filter-chip.selected { border-color: color-mix(in srgb, var(--chip-c) 70%, var(--border-light)); background: color-mix(in srgb, var(--chip-c) 12%, var(--bg-card)); }
+.scan-filter-chip.selected .scan-filter-count { color: var(--text); }
 .scan-filter-chip.status-active   { --chip-c: var(--beam); }
 .scan-filter-chip.status-queued   { --chip-c: var(--text-muted); }
 .scan-filter-chip.status-completed{ --chip-c: var(--signal); }
@@ -1385,7 +1428,7 @@ a.results-export { text-decoration: none; }
   .search-inner { max-width: none; }
   .search-hero h1 { font-size: 30px; line-height: 1.05; }
   .search-sub { font-size: 13px; line-height: 1.6; }
-  .search-box { display: grid; grid-template-columns: 36px 1fr; }
+  .search-box { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; }
   .search-icon { margin-left: 14px; }
   .search-box input { height: 48px; min-width: 0; }
   .search-btn { grid-column: 1 / -1; width: 100%; height: 44px; }

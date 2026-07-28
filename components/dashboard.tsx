@@ -14,6 +14,7 @@ import {
   Radio,
   Search,
   Server,
+  X,
   Wifi,
   Zap,
 } from 'lucide-react';
@@ -75,7 +76,11 @@ function DashboardInner() {
   const searchParams = useSearchParams();
   const initialDevice = searchParams.get('device') as DeviceType | null;
   const initialAsn = searchParams.get('asn');
-  const [q, setQ] = React.useState('');
+  // Keep typing separate from the submitted query. Searching used to fire a
+  // network request for every keystroke and the visible Search button did
+  // nothing, which made results feel jumpy and unreliable.
+  const [q, setQ] = React.useState(searchParams.get('q') ?? '');
+  const [queryDraft, setQueryDraft] = React.useState(searchParams.get('q') ?? '');
   const [port, setPort] = React.useState('');
   const [device, setDevice] = React.useState<DeviceType | ''>(
     initialDevice && DEVICE_ORDER.includes(initialDevice) ? initialDevice : ''
@@ -126,19 +131,26 @@ function DashboardInner() {
     refetchInterval: 120000,
   });
 
-  const uniqueRows = React.useMemo(() => {
-    const seen = new Set<string>();
-    return (findings.data?.rows ?? []).filter((row) => {
-      if (seen.has(row.ip)) return false;
-      seen.add(row.ip);
-      return true;
-    });
-  }, [findings.data?.rows]);
-
   const total = findings.data?.total ?? 0;
-  const rows = uniqueRows;
+  const rows = findings.data?.rows ?? [];
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(start + pageSize - 1, total);
+
+  React.useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(total / pageSize));
+    if (total > 0 && page > lastPage) setPage(lastPage);
+  }, [page, total]);
+
+  const clearAllFilters = () => {
+    setQ('');
+    setQueryDraft('');
+    setPort('');
+    setDevice('');
+    setAsn(null);
+    setSoftware('');
+    setPage(1);
+  };
+  const activeFilterCount = Number(Boolean(q)) + Number(Boolean(port)) + Number(Boolean(device)) + Number(asn !== null) + Number(Boolean(software));
 
   return (
     <div className="app">
@@ -151,15 +163,28 @@ function DashboardInner() {
             Search across {stats.data?.hosts?.toLocaleString() ?? '—'} hosts and{' '}
             {stats.data?.findings?.toLocaleString() ?? '—'} open-port findings in your authorized infrastructure.
           </p>
-          <div className="search-box">
+          <form
+            className="search-box"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setQ(queryDraft.trim());
+              setPage(1);
+            }}
+          >
             <Search size={18} className="search-icon" />
             <input
-              value={q}
-              onChange={(e) => { setQ(e.target.value); setPage(1); }}
-              placeholder="Search by IP, banner, service or product..."
+              value={queryDraft}
+              onChange={(e) => setQueryDraft(e.target.value)}
+              placeholder="Search IP, service, product, banner…"
+              aria-label="Search hosts"
             />
-            <button className="search-btn">Search</button>
-          </div>
+            {queryDraft && (
+              <button type="button" className="search-clear" aria-label="Clear search" onClick={() => { setQueryDraft(''); setQ(''); setPage(1); }}>
+                <X size={15} />
+              </button>
+            )}
+            <button type="submit" className="search-btn">Search</button>
+          </form>
           <div className="search-tags">
             <span>Popular:</span>
             {stats.data?.topPorts?.slice(0, 6).map((p) => (
@@ -172,6 +197,7 @@ function DashboardInner() {
               </button>
             ))}
           </div>
+          <p className="search-help">Use multiple words to narrow results. A number matches an exact port as well as IP text; use <code>port:443</code> for a port-only search.</p>
         </div>
       </header>
 
@@ -184,6 +210,29 @@ function DashboardInner() {
 
       <main className="results">
         <aside className="filters">
+          <div className="filter-panel filter-panel-compact">
+            <div className="filter-heading-row">
+              <h4>Refine results</h4>
+              {activeFilterCount > 0 && <button type="button" className="clear-filter" onClick={clearAllFilters}>Clear all</button>}
+            </div>
+            <label className="filter-input-label" htmlFor="port-filter">Exact port</label>
+            <input
+              id="port-filter"
+              className="filter-port-input"
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next === '' || (/^\d{1,5}$/.test(next) && Number(next) >= 1 && Number(next) <= 65535)) {
+                  setPort(next);
+                  setPage(1);
+                }
+              }}
+              placeholder="e.g. 443"
+            />
+          </div>
           <div className="filter-panel">
             <h4>Device Type</h4>
             <div className="device-filter">
@@ -312,6 +361,17 @@ function DashboardInner() {
         </aside>
 
         <section className="results-main">
+          {activeFilterCount > 0 && (
+            <div className="active-filter-bar" aria-label="Active filters">
+              <span>Filtering by</span>
+              {q && <button type="button" className="active-filter" onClick={() => { setQ(''); setQueryDraft(''); setPage(1); }}>Search: {q}<X size={12} /></button>}
+              {port && <button type="button" className="active-filter" onClick={() => { setPort(''); setPage(1); }}>Port {port}<X size={12} /></button>}
+              {device && <button type="button" className="active-filter" onClick={() => { setDevice(''); setPage(1); }}>{deviceLabel(device)}<X size={12} /></button>}
+              {software && <button type="button" className="active-filter" onClick={() => { setSoftware(''); setPage(1); }}>{software}<X size={12} /></button>}
+              {asn !== null && <button type="button" className="active-filter" onClick={() => { setAsn(null); setPage(1); }}>AS{asn}<X size={12} /></button>}
+              <button type="button" className="active-filter-clear" onClick={clearAllFilters}>Clear all</button>
+            </div>
+          )}
           <div className="results-header">
             <span className="results-count">
               Showing <b>{rows.length ? `${start}–${end}` : '0'}</b> of <b>{total.toLocaleString()}</b> results

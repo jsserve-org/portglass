@@ -51,6 +51,13 @@ class ScannerResilienceTests(unittest.TestCase):
         with self.assertRaises(argparse.ArgumentTypeError):
             fast_scan.filter_excluded_ports([5060], "5060")
 
+    def test_dynamic_seed_uses_selected_common_ports_and_never_excluded_ones(self):
+        selected = fast_scan.filter_excluded_ports([22, 80, 443, 5060, 9999], "5060")
+        self.assertEqual(fast_scan.dynamic_seed_ports(selected), [22, 80, 443])
+
+    def test_dynamic_seed_falls_back_for_custom_uncommon_ports(self):
+        self.assertEqual(fast_scan.dynamic_seed_ports([12345, 23456]), [12345, 23456])
+
     def test_main_never_generates_targets_for_excluded_port(self):
         observed_ports = []
 

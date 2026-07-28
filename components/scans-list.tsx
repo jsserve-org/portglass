@@ -103,8 +103,8 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// Status filter chips (toggle a status off to hide those scans). Any unknown
-// status is bucketed as "failed" (rendered as Interrupted), matching StatusBadge.
+// Status filter chips select the statuses to show. Any unknown status is
+// bucketed as "failed" (rendered as Interrupted), matching StatusBadge.
 const STATUS_FILTERS: { key: string; label: string }[] = [
   { key: "active", label: "Active" },
   { key: "queued", label: "Queued" },
@@ -131,8 +131,10 @@ function ProgressBar({ pct }: { pct: number }) {
 
 function ScansListInner() {
   const [q, setQ] = useState("");
-  // Statuses hidden from the list (toggle a chip off to hide those scans).
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // An empty set means "all statuses". Selecting one or more chips narrows the
+  // view; this is much less surprising than a chip labelled Active that hid
+  // Active rows when clicked.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
   const [showScan, setShowScan] = useState(false);
   const live = useScansWs(["scans"]);
 
@@ -151,7 +153,7 @@ function ScansListInner() {
   for (const s of all) statusCounts.set(normStatus(s.status), (statusCounts.get(normStatus(s.status)) ?? 0) + 1);
 
   const rows = all.filter((s) => {
-    if (hidden.has(normStatus(s.status))) return false;
+    if (statusFilter.size > 0 && !statusFilter.has(normStatus(s.status))) return false;
     if (!q.trim()) return true;
     const needle = q.toLowerCase();
     return (
@@ -163,7 +165,7 @@ function ScansListInner() {
   });
 
   const toggleStatus = (key: string) =>
-    setHidden((prev) => {
+    setStatusFilter((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
@@ -220,15 +222,15 @@ function ScansListInner() {
 
         <div className="scan-filter-bar">
           {STATUS_FILTERS.filter((f) => (statusCounts.get(f.key) ?? 0) > 0).map((f) => {
-            const off = hidden.has(f.key);
+            const selected = statusFilter.has(f.key);
             return (
               <button
                 key={f.key}
                 type="button"
-                className={`scan-filter-chip status-${f.key} ${off ? "off" : ""}`}
-                aria-pressed={!off}
+                className={`scan-filter-chip status-${f.key} ${selected ? "selected" : ""}`}
+                aria-pressed={selected}
                 onClick={() => toggleStatus(f.key)}
-                title={off ? `Show ${f.label} scans` : `Hide ${f.label} scans`}
+                title={selected ? `Remove ${f.label} from filter` : `Show ${f.label} scans`}
               >
                 <span className="scan-filter-dot" />
                 {f.label}
@@ -236,9 +238,9 @@ function ScansListInner() {
               </button>
             );
           })}
-          {hidden.size > 0 && (
-            <button type="button" className="scan-filter-reset" onClick={() => setHidden(new Set())}>
-              Show all
+          {statusFilter.size > 0 && (
+            <button type="button" className="scan-filter-reset" onClick={() => setStatusFilter(new Set())}>
+              Clear status filter
             </button>
           )}
         </div>
@@ -287,10 +289,10 @@ function ScansListInner() {
           {!rows.length && (
             <div className="empty-state" style={{ gridColumn: "1 / -1" }}>
               <Search size={40} />
-              {all.length && (hidden.size || q.trim()) ? (
+              {all.length && (statusFilter.size || q.trim()) ? (
                 <>
                   <h3>No scans match your filters</h3>
-                  <p>{hidden.size ? "Some statuses are hidden. " : ""}Adjust the filters above to see more.</p>
+                  <p>{statusFilter.size ? "The selected statuses have no matching scans. " : ""}Adjust the filters above to see more.</p>
                 </>
               ) : (
                 <>

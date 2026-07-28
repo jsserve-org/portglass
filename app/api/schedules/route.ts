@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   // Only carry the scan knobs, not target fields, into options.
   const opts: ScheduleOptions = {};
-  for (const k of ['deep', 'stealth', 'fast', 'discover', 'banner'] as const) {
+  for (const k of ['deep', 'stealth', 'fast', 'discover', 'dynamic', 'banner'] as const) {
     if (body[k]) (opts as any)[k] = true;
   }
   // Persist per-scan exclude ranges so every recurring run skips them too.

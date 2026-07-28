@@ -68,6 +68,44 @@ function OptionRow({
   );
 }
 
+function StrategyRow({
+  active,
+  onSelect,
+  icon,
+  title,
+  desc,
+  badge,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      className={cn(
+        "flex w-full items-start gap-3 rounded-sm border p-3 text-left transition-colors",
+        active ? "border-signal bg-signal/[0.07]" : "border-border bg-muted hover:border-input"
+      )}
+    >
+      <span className={cn("mt-0.5 flex size-4 shrink-0 rounded-full border-[5px]", active ? "border-signal bg-signal" : "border-input bg-transparent")} />
+      <span className="min-w-0">
+        <span className={cn("flex items-center gap-1.5 text-[13px] font-semibold", active ? "text-signal" : "text-foreground", "[&_svg]:size-3.5")}>
+          {icon}
+          {title}
+          {badge && <span className="rounded-sm border border-signal/30 bg-signal/10 px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.08em] text-signal">{badge}</span>}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{desc}</span>
+      </span>
+    </button>
+  );
+}
+
 export default function ScanModal({ onClose, onStarted }: { onClose: () => void; onStarted: () => void }) {
   const [cidr, setCidr] = useState("");
   const [label, setLabel] = useState("");
@@ -108,13 +146,9 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
     setDeep(v);
     if (v) setFast(false);
   };
-  const enableDiscover = (v: boolean) => {
-    setDiscover(v);
-    if (v) setDynamic(false);
-  };
-  const enableDynamic = (v: boolean) => {
-    setDynamic(v);
-    if (v) setDiscover(false);
+  const selectScanStrategy = (strategy: "standard" | "discover" | "dynamic") => {
+    setDiscover(strategy === "discover");
+    setDynamic(strategy === "dynamic");
   };
 
   async function handleSubmit(e: React.FormEvent) {
@@ -209,7 +243,7 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               maxLength={80}
             />
 
-            <label className="modal-label">Ports</label>
+            <label className="modal-label">Ports to scan</label>
             <select className="modal-input" value={preset} onChange={(e) => setPreset(e.target.value)}>
               {PRESETS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
@@ -224,6 +258,9 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 placeholder="80,443,8080 or 1-1024"
               />
             )}
+            <p className="-mt-1 mb-1 text-[11px] leading-snug text-muted-foreground">
+              This is the full port scope. Smart scan uses a small high-signal subset of this selection first, then scans the full selection only on responsive hosts.
+            </p>
 
             <label className="modal-label">
               <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ports</span>
@@ -270,6 +307,36 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
             )}
 
             <div className="flex flex-col gap-2">
+              <div className="mb-1 mt-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Scan strategy</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Choose how this port scope is applied to the target range.</p>
+              </div>
+              <StrategyRow
+                active={!discover && !dynamic}
+                onSelect={() => selectScanStrategy("standard")}
+                icon={<Radio />}
+                title="Standard scan"
+                desc="Apply the selected port scope to every allowed host in the target range."
+              />
+              <StrategyRow
+                active={dynamic}
+                onSelect={() => selectScanStrategy("dynamic")}
+                icon={<Radar />}
+                title="Smart scan"
+                badge="Recommended"
+                desc="Test high-signal ports from the selected scope first, then run the full selected scope only on responsive hosts. Best for sparse ranges; hosts exposing only unusual ports can be missed."
+              />
+              <StrategyRow
+                active={discover}
+                onSelect={() => selectScanStrategy("discover")}
+                icon={<Crosshair />}
+                title="Quick host discovery"
+                desc="Use a compact common-port presence check, then apply the selected scope only to responsive hosts."
+              />
+
+              <div className="mb-1 mt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Execution profile</p>
+              </div>
               <OptionRow
                 checked={fast}
                 onChange={enableFast}
@@ -290,20 +357,6 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 icon={<ShieldOff />}
                 title="Low-and-slow mode"
                 desc="Probes one connection at a time, interleaves ports across hosts, randomises order, adds jitter and holds the rate low to slip under simple port-scan thresholds. It's a full TCP connect scan, so it's not true IDS evasion — lower the rate further if you still get flagged. Much slower."
-              />
-              <OptionRow
-                checked={discover}
-                onChange={enableDiscover}
-                icon={<Crosshair />}
-                title="Discover alive hosts first"
-                desc="Fast pre-scan over common ports, then full scan only the responsive IPs. Faster on sparse ranges."
-              />
-              <OptionRow
-                checked={dynamic}
-                onChange={enableDynamic}
-                icon={<Radar />}
-                title="Dynamic port scan"
-                desc="Probe a broader high-signal seed set first, then sweep your selected ports only on responsive hosts. Great for sparse ranges; a host exposing only unusual ports can be missed. Excluded ports are skipped in both phases."
               />
             </div>
 

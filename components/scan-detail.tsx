@@ -18,6 +18,8 @@ import {
   ChevronUp,
   MapPin,
   Clock,
+  TerminalSquare,
+  Database,
   } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
@@ -51,6 +53,7 @@ type ScanRun = {
   currentIp: string | null;
   progressAt: string | null;
   queued: boolean;
+  cliDeviceId: string | null;
 };
 
 type Geo = {
@@ -76,6 +79,7 @@ type Summary = {
     portsScanned: number[];
     topServices: [string, number][];
     duration: number | null;
+    shodanHosts: number;
   };
   ai: string | null;
 };
@@ -272,6 +276,11 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 Active
               </span>
             )}
+            {run.cliDeviceId && (
+              <span className="scan-live-tag" title="This scan was activated by a linked CLI device">
+                <TerminalSquare size={12} /> CLI activated
+              </span>
+            )}
             {isActive && (
               <button className="danger-action-btn" onClick={forceKillScan} disabled={killing}>
                 {killing ? "Killing…" : "Force kill port scanning"}
@@ -366,6 +375,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
         )}
 
         {comp && (
+          <div>
           <div className="scan-summary-cards">
             <div className="summary-card">
               <Globe size={18} />
@@ -374,6 +384,15 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 <span className="label">Hosts with open ports</span>
               </div>
             </div>
+            {comp.shodanHosts > 0 && (
+              <div className="summary-card">
+                <Database size={18} />
+                <div>
+                  <span className="value">{comp.shodanHosts}</span>
+                  <span className="label">Shodan-enriched hosts</span>
+                </div>
+              </div>
+            )}
             <div className="summary-card">
               <Radio size={18} />
               <div>
@@ -388,6 +407,12 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 <span className="value-small">{comp.topServices.slice(0, 5).map(([s, c]) => `${s} (${c})`).join(", ")}</span>
               </div>
             </div>
+          </div>
+          {comp.shodanHosts > 0 && (
+            <a href="https://www.shodan.io/" target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 font-mono text-[10px] text-beam hover:underline">
+              Data provided by Shodan <ExternalLink size={10} />
+            </a>
+          )}
           </div>
         )}
 

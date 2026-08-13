@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { portFindings, scanRuns } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 
 function buildPrompt(findings: any[], run: any): string {
   const hosts = new Set(findings.map((f) => f.ip)).size;
@@ -97,6 +97,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
   const topServices = Object.entries(services).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
+  const shodanRows = await db.execute(sql`
+    SELECT COUNT(DISTINCT pf.ip)::int AS count
+    FROM port_findings pf
+    JOIN shodan_host_cache sc ON sc.ip = pf.ip AND sc.expires_at > now()
+    WHERE pf.run_id = ${runId}
+  `).catch(() => ({ rows: [{ count: 0 }] }));
+  const shodanHosts = Number((shodanRows.rows[0] as { count?: unknown } | undefined)?.count ?? 0);
+
   const prompt = buildPrompt(findings, run[0]);
   const aiText = await aiSummary(prompt);
 
@@ -106,6 +114,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       openPorts: findings.length,
       portsScanned: ports,
       topServices,
+      shodanHosts,
       duration: run[0].finishedAt && run[0].startedAt
         ? Math.round((new Date(run[0].finishedAt).getTime() - new Date(run[0].startedAt).getTime()) / 1000)
         : null,

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Shield, ArrowRight } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
-export default function LoginClient() {
+export default function LoginClient({ callbackPath = "/" }: { callbackPath?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -13,7 +13,7 @@ export default function LoginClient() {
     setLoading(true);
     const { data, error } = await authClient.signIn.oauth2({
       providerId: "authentik",
-      callbackURL: window.location.origin + "/",
+      callbackURL: window.location.origin + callbackPath,
     });
     if (error) {
       setError(error.message || "Sign-in failed. Please try again.");

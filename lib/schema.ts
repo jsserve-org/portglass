@@ -27,6 +27,10 @@ export const scanRuns = pgTable('scan_runs', {
   // The dispatcher (lib/queue.ts) starts queued runs as concurrency slots free,
   // so heavy scans never all run at once and saturate the host.
   queued: boolean('queued').notNull().default(false),
+  // Origin metadata for runs submitted by a linked Portglass CLI device.
+  // Null means the scan came from the website or scheduler.
+  cliDeviceId: text('cli_device_id'),
+  requestedBy: text('requested_by'),
 });
 
 export const portFindings = pgTable('port_findings', {
@@ -161,9 +165,63 @@ export const skipSubnets = pgTable('skip_subnets', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Long-lived CLI devices. The bearer token itself is shown exactly once to the
+// CLI; only its SHA-256 digest is persisted, so a DB read cannot recover it.
+export const cliDevices = pgTable('cli_devices', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  name: text('name').notNull(),
+  platform: text('platform'),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index('idx_cli_devices_user').on(table.userId),
+}));
+
+// Short-lived OAuth-style device authorization requests. Approval associates
+// the browser user; the polling CLI then atomically exchanges the device code
+// for a newly-created cli_devices row and bearer token.
+export const cliDeviceCodes = pgTable('cli_device_codes', {
+  deviceCode: text('device_code').primaryKey(),
+  userCode: text('user_code').notNull().unique(),
+  deviceName: text('device_name').notNull(),
+  platform: text('platform'),
+  approvedBy: text('approved_by').references(() => user.id, { onDelete: 'cascade' }),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  expiresIdx: index('idx_cli_device_codes_expires').on(table.expiresAt),
+}));
+
+// Bounded private cache of minified host summaries plus a durable audit trail.
+// Raw Shodan banners are never requested or stored. Cache rows expire after
+// 24h and are refreshed only for Portglass-observed US hosts.
+export const shodanHostCache = pgTable('shodan_host_cache', {
+  ip: text('ip').primaryKey(),
+  summary: text('summary').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+export const shodanLookupLog = pgTable('shodan_lookup_log', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  ip: text('ip').notNull(),
+  runId: integer('run_id').references(() => scanRuns.id, { onDelete: 'set null' }),
+  status: text('status').notNull(),
+  error: text('error'),
+  queriedAt: timestamp('queried_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  runIdx: index('idx_shodan_lookup_log_run').on(table.runId),
+  ipIdx: index('idx_shodan_lookup_log_ip').on(table.ip),
+}));
+
 export type ScanRun = typeof scanRuns.$inferSelect;
 export type PortFinding = typeof portFindings.$inferSelect;
 export type Share = typeof shares.$inferSelect;
 export type HostDevice = typeof hostDevices.$inferSelect;
 export type ScanSchedule = typeof scanSchedules.$inferSelect;
 export type SkipSubnet = typeof skipSubnets.$inferSelect;
+export type CliDevice = typeof cliDevices.$inferSelect;

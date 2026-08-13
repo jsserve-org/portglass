@@ -99,12 +99,50 @@ The integration is deliberately narrow to comply with Shodan's terms:
 - it only looks up individual hosts already observed by Portglass;
 - it returns Shodan data only for US hosts and does not expose bulk search;
 - it requests minified host records, never service banners;
-- responses are cached in process for six hours to reduce API usage;
-- Shodan-derived data is not persisted, included in exports, or included in
-  public share snapshots; and
+- responses are cached in process for six hours and as private minified DB
+  summaries for 24 hours to reduce API usage;
+- completed scans enrich at most 25 unique US hosts by default (configurable
+  with `SHODAN_AUTO_ENRICH_LIMIT`, capped at 100), sequentially;
+- lookup status is audited, while raw banners are never requested or stored;
+- Shodan-derived data is not included in exports or public share snapshots; and
 - every displayed result is attributed and linked to Shodan.
 
 Your Shodan plan and any separate written agreement still control permitted
 use. Academic/Research access must not be used commercially. See the
 [Shodan Terms of Service](https://static.shodan.io/legal/terms.html) and
 [API documentation](https://developer.shodan.io/api).
+
+## Remote CLI
+
+Portglass includes a cross-platform CLI that links to a website account using a
+10-minute device code. The CLI stores its bearer credential in the current
+user's OS config directory with user-only file permissions; the server stores
+only a SHA-256 token digest. Linked devices can be reviewed and revoked at
+`/cli`.
+
+macOS, Fedora/Linux:
+
+```bash
+curl -fsSL https://scan.2oo.dev/cli/install.sh | sh
+portglass login
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://scan.2oo.dev/cli/install.ps1 | iex
+portglass login
+```
+
+Activate a scan and return immediately, inspect it, then download its results:
+
+```bash
+portglass activate 192.0.2.0/28 -p common --label edge-audit
+portglass scans
+portglass status 123
+portglass download 123 --format csv
+```
+
+`activate` (also available as `scan`) uses the same authorization checks,
+skip-list enforcement, queue, and resource limits as the website. Only scan
+networks you own or are explicitly authorized to assess.

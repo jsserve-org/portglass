@@ -28,6 +28,13 @@ export function middleware(request: NextRequest) {
     pathname === '/api/internal/tick' ||
     pathname === '/api/me' ||
     pathname === '/api/health' ||
+    pathname === '/api/cli/device/start' ||
+    pathname === '/api/cli/device/poll' ||
+    // CLI bearer-token routes self-authenticate without browser cookies.
+    pathname === '/api/cli/me' ||
+    pathname.startsWith('/api/cli/scans') ||
+    pathname === '/cli/install.sh' ||
+    pathname === '/cli/install.ps1' ||
     pathname.startsWith('/share/') ||
     pathname.startsWith('/api/share/') ||
     pathname === '/favicon.ico'
@@ -48,7 +55,9 @@ export function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    return NextResponse.redirect(new URL('/login', request.url));
+    const login = new URL('/login', request.url);
+    login.searchParams.set('next', pathname + request.nextUrl.search);
+    return NextResponse.redirect(login);
   }
 
   return NextResponse.next();

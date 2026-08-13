@@ -65,6 +65,14 @@ export function launchScanner(runId: number, args: string[], env: NodeJS.Process
         import('@/lib/host-devices')
           .then((m) => m.refreshHostDevices())
           .catch((err) => console.error('refreshHostDevices after exit failed', err));
+        // Bounded, terms-aware Shodan comparison for US hosts discovered by
+        // this completed run. It is detached from queue dispatch and cannot
+        // delay the next scan.
+        if (code === 0) {
+          import('@/lib/shodan-enrich')
+            .then((m) => m.enrichScanWithShodan(runId))
+            .catch((err) => console.error('Shodan auto-enrichment after exit failed', err));
+        }
       });
   });
 

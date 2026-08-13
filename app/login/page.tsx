@@ -1,5 +1,7 @@
 import LoginClient from '@/components/login-client';
 
-export default function LoginPage() {
-  return <LoginClient />;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const next = (await searchParams).next;
+  const safeNext = next?.startsWith('/') && !next.startsWith('//') ? next : '/';
+  return <LoginClient callbackPath={safeNext} />;
 }

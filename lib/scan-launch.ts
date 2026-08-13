@@ -32,6 +32,8 @@ export type ScanInput = {
   // Per-scan ranges to skip (comma/space/newline separated, or an array). These
   // are excluded for THIS scan only, on top of the global skip-subnet list.
   exclude?: string | string[];
+  cliDeviceId?: string | null;
+  requestedBy?: string | null;
 };
 
 export type CreateScanResult =
@@ -149,7 +151,15 @@ export async function createScanRun(input: ScanInput): Promise<CreateScanResult>
 
   const [run] = await db
     .insert(scanRuns)
-    .values({ cidr, label, ports, startedAt: new Date(), scannerVersion: 'fast_scan.py' })
+    .values({
+      cidr,
+      label,
+      ports,
+      startedAt: new Date(),
+      scannerVersion: 'fast_scan.py',
+      cliDeviceId: input.cliDeviceId ?? null,
+      requestedBy: input.requestedBy ?? null,
+    })
     .returning({ id: scanRuns.id });
   const runId = run.id;
 

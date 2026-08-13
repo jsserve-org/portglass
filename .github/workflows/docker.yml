@@ -50,3 +50,44 @@ jobs:
         run: |
           gh release create latest /tmp/portglass-image.tar.gz --title latest --notes "Latest Portglass Docker image tarball" --latest || true
           gh release upload latest /tmp/portglass-image.tar.gz --clobber
+
+  cli:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Build CLI release assets
+        env:
+          CGO_ENABLED: '0'
+          VERSION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist work
+          cd cli
+          build_tar() {
+            os="$1" arch="$2"
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o ../work/portglass .
+            tar -C ../work -czf "../dist/portglass_${os}_${arch}.tar.gz" portglass
+          }
+          build_zip() {
+            arch="$1"
+            GOOS=windows GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o ../work/portglass.exe .
+            (cd ../work && zip -q "../dist/portglass_windows_${arch}.zip" portglass.exe)
+          }
+          build_tar linux amd64
+          build_tar linux arm64
+          build_tar darwin amd64
+          build_tar darwin arm64
+          build_zip amd64
+          build_zip arm64
+          (cd ../dist && sha256sum portglass_* > checksums.txt)
+      - name: Publish rolling CLI release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create cli-latest --title "Portglass CLI" --notes "Cross-platform Portglass remote scanner CLI. Build: $GITHUB_SHA" --latest=false || \
+            gh release edit cli-latest --title "Portglass CLI" --notes "Cross-platform Portglass remote scanner CLI. Build: $GITHUB_SHA" --latest=false
+          gh release upload cli-latest dist/* --clobber

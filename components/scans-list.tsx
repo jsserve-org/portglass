@@ -19,6 +19,7 @@ import {
   XCircle,
   AlertCircle,
   Server,
+  TerminalSquare,
 } from "lucide-react";
 import TopNav from "./top-nav";
 import ManagePanel from "./manage-panel";
@@ -46,6 +47,7 @@ type ScanRun = {
   totalTargets: number | null;
   attemptedTargets: number | null;
   label: string | null;
+  cliDeviceId: string | null;
 };
 
 function fmtDuration(sec: number): string {
@@ -251,7 +253,10 @@ function ScansListInner() {
               <div className={`scan-card ${run.status === "active" ? "scan-card-active" : ""}`}>
                 <div className="scan-card-top">
                   <div className="scan-card-id">#{run.id}</div>
-                  <StatusBadge status={run.status} />
+                  <div className="flex items-center gap-1.5">
+                    {run.cliDeviceId && <span className="scan-status-badge"><TerminalSquare size={10} /> CLI</span>}
+                    <StatusBadge status={run.status} />
+                  </div>
                 </div>
                 {run.label && <div className="scan-card-label">{run.label}</div>}
                 <div className="scan-card-cidr">

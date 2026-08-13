@@ -1,7 +1,11 @@
 import 'server-only';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { shodanHostCache, shodanLookupLog } from '@/lib/schema';
 
 const API_BASE = 'https://api.shodan.io';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const DB_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_PTR_NAMES = 5;
 
 export type ShodanHostIntel = {
@@ -117,20 +121,50 @@ export function isShodanConfigured(): boolean {
   return Boolean(process.env.SHODAN_API_KEY?.trim());
 }
 
-export async function getShodanHostIntel(ip: string): Promise<ShodanHostIntel> {
+export async function getShodanHostIntel(ip: string, options: { runId?: number } = {}): Promise<ShodanHostIntel> {
   const apiKey = process.env.SHODAN_API_KEY?.trim();
   if (!apiKey) throw new ShodanApiError('Shodan is not configured', 503);
 
   const cached = cache.get(ip);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
+  const [stored] = await db.select().from(shodanHostCache).where(eq(shodanHostCache.ip, ip)).limit(1);
+  if (stored && stored.expiresAt.getTime() > Date.now()) {
+    try {
+      const value = JSON.parse(stored.summary) as ShodanHostIntel;
+      cache.set(ip, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+      return value;
+    } catch {
+      // Corrupt/old cache shape: replace it with a fresh minified lookup.
+    }
+  }
+
   const pending = inFlight.get(ip);
   if (pending) return pending;
 
   const promise = loadHost(ip, apiKey)
-    .then((value) => {
+    .then(async (value) => {
       cache.set(ip, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+      await db.insert(shodanHostCache).values({
+        ip,
+        summary: JSON.stringify(value),
+        fetchedAt: new Date(),
+        expiresAt: new Date(Date.now() + DB_CACHE_TTL_MS),
+      }).onConflictDoUpdate({
+        target: shodanHostCache.ip,
+        set: { summary: JSON.stringify(value), fetchedAt: new Date(), expiresAt: new Date(Date.now() + DB_CACHE_TTL_MS) },
+      });
+      await db.insert(shodanLookupLog).values({ ip, runId: options.runId, status: 'fetched' });
       return value;
+    })
+    .catch(async (error) => {
+      await db.insert(shodanLookupLog).values({
+        ip,
+        runId: options.runId,
+        status: 'error',
+        error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown error',
+      }).catch(() => {});
+      throw error;
     })
     .finally(() => inFlight.delete(ip));
   inFlight.set(ip, promise);

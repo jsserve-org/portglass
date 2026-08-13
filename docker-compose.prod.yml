@@ -48,6 +48,9 @@ services:
       # Public Mapbox token (pk.*) for the host-location map. Read at runtime so
       # it never has to be committed to the repo.
       MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      # Server-side only. Enables authenticated, on-demand Shodan enrichment
+      # for US hosts already observed by Portglass; never exposed to clients.
+      SHODAN_API_KEY: ${SHODAN_API_KEY:-}
       # Max scans running at once; the rest queue. Keep low on this small host.
       MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
       # Give V8 an explicit heap ceiling (~1GB) instead of letting it auto-size

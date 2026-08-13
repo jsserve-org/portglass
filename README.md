@@ -83,3 +83,28 @@ Only open ports are written.
 
 The scanner requires `--yes-i-own-this-network` so it is not accidentally run on
 third-party networks. Only scan systems where you have permission.
+
+## Shodan enrichment (optional)
+
+Set `SHODAN_API_KEY` in the server environment to enrich US host-detail pages
+with minified Shodan host metadata, reverse DNS, and forward-confirmed DNS.
+The key is used only by the server and is never sent to the browser.
+
+```bash
+SHODAN_API_KEY=your_key_here
+```
+
+The integration is deliberately narrow to comply with Shodan's terms:
+
+- it only looks up individual hosts already observed by Portglass;
+- it returns Shodan data only for US hosts and does not expose bulk search;
+- it requests minified host records, never service banners;
+- responses are cached in process for six hours to reduce API usage;
+- Shodan-derived data is not persisted, included in exports, or included in
+  public share snapshots; and
+- every displayed result is attributed and linked to Shodan.
+
+Your Shodan plan and any separate written agreement still control permitted
+use. Academic/Research access must not be used commercially. See the
+[Shodan Terms of Service](https://static.shodan.io/legal/terms.html) and
+[API documentation](https://developer.shodan.io/api).

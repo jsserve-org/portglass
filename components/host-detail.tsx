@@ -18,6 +18,8 @@ import {
   Terminal,
   Braces,
   Download,
+  Database,
+  ShieldCheck,
 } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
@@ -64,6 +66,35 @@ type Geo = {
   asn: number | null;
   org: string | null;
 };
+
+type ShodanIntel = {
+  source: "Shodan";
+  ip: string;
+  countryCode: string | null;
+  countryName: string | null;
+  city: string | null;
+  regionCode: string | null;
+  asn: string | null;
+  org: string | null;
+  isp: string | null;
+  os: string | null;
+  ports: number[];
+  hostnames: string[];
+  domains: string[];
+  tags: string[];
+  lastUpdate: string | null;
+  reverseDns: string[];
+  forwardDns: Record<string, string[]>;
+  fcrdns: boolean;
+};
+
+type ShodanResponse =
+  | {
+      available: true;
+      attribution: { label: string; url: string };
+      intel: ShodanIntel;
+    }
+  | { available: false; reason: "not_us" | "not_configured" | "not_found" };
 
 function flagEmoji(iso: string | null | undefined): string {
   if (!iso || iso.length !== 2) return "";
@@ -159,6 +190,34 @@ function HostDetailInner({ ip }: { ip: string }) {
   // where the PTR points somewhere else (stale or spoofed reverse DNS).
   const forwardAddrs = dnsData ? [...new Set(Object.values(dnsData.forward).flat())] : [];
   const forwardMismatch = forwardAddrs.filter((a) => a !== ip);
+
+  // Shodan is intentionally queried only after the local geo lookup identifies
+  // a US host. Its data stays out of raw JSON, downloads, and share snapshots.
+  const shodanq = useQuery({
+    queryKey: ["shodan", ip],
+    enabled: geo?.countryIso?.toUpperCase() === "US" && findings.length > 0,
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: false,
+    queryFn: async (): Promise<ShodanResponse> => {
+      const res = await fetch(`/api/host/${encodeURIComponent(ip)}/shodan`, { credentials: "include" });
+      const body = await res.json().catch(() => null) as (ShodanResponse & { code?: string; error?: string }) | null;
+      if (res.status === 503 && body?.code === "not_configured") {
+        return { available: false, reason: "not_configured" };
+      }
+      if (res.status === 404) return { available: false, reason: "not_found" };
+      if (!res.ok || !body) throw new Error(body?.error || "Shodan enrichment failed");
+      return body;
+    },
+  });
+
+  const shodan = shodanq.data?.available ? shodanq.data.intel : null;
+  const shodanUnavailableReason = shodanq.data && !shodanq.data.available
+    ? shodanq.data.reason
+    : null;
+  const shodanForward = shodan
+    ? Object.entries(shodan.forwardDns)
+        .flatMap(([hostname, addresses]) => addresses.map((address) => `${hostname} → ${address}`))
+    : [];
 
   const tech = useMemo(() => {
     const sources = findings.flatMap((f) => [f.headers, f.banner]);
@@ -415,6 +474,75 @@ function HostDetailInner({ ip }: { ip: string }) {
                 <IntelRow icon={<Server />} label="Open ports" value={ports.length} mono />
               </div>
             </Card>
+
+            {geo?.countryIso?.toUpperCase() === "US" && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    <Database /> Shodan enrichment
+                  </CardTitle>
+                  {shodanq.data?.available && (
+                    <a
+                      href={shodanq.data.attribution.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[10px] text-beam hover:underline"
+                    >
+                      {shodanq.data.attribution.label} <ExternalLink size={10} />
+                    </a>
+                  )}
+                </CardHeader>
+                {shodanq.isLoading ? (
+                  <CardContent className="text-xs text-muted-foreground">Looking up this US host…</CardContent>
+                ) : shodan ? (
+                  <div>
+                    <IntelRow
+                      icon={<Network />}
+                      label="Shodan rDNS"
+                      value={shodan.reverseDns.length ? shodan.reverseDns.join(", ") : null}
+                      mono
+                    />
+                    <IntelRow
+                      icon={<Globe />}
+                      label="Shodan forward DNS"
+                      value={shodanForward.length ? shodanForward.join(", ") : null}
+                      mono
+                    />
+                    <IntelRow
+                      icon={<ShieldCheck />}
+                      label="Forward-confirm"
+                      value={shodan.reverseDns.length ? (
+                        shodan.fcrdns ? <Badge variant="default">FCrDNS ✓</Badge> : <Badge variant="amber">not confirmed</Badge>
+                      ) : null}
+                    />
+                    <IntelRow
+                      icon={<Building2 />}
+                      label="Network owner"
+                      value={[shodan.org, shodan.isp].filter((v, i, all) => v && all.indexOf(v) === i).join(" · ") || null}
+                    />
+                    <IntelRow
+                      icon={<Server />}
+                      label="Shodan ports"
+                      value={shodan.ports.length ? shodan.ports.join(", ") : null}
+                      mono
+                    />
+                    <IntelRow
+                      icon={<Clock />}
+                      label="Shodan observed"
+                      value={shodan.lastUpdate ? new Date(shodan.lastUpdate).toLocaleString() : null}
+                    />
+                  </div>
+                ) : (
+                  <CardContent className="text-xs text-muted-foreground">
+                    {shodanUnavailableReason === "not_configured"
+                      ? "Add SHODAN_API_KEY on the server to enable US host enrichment."
+                      : shodanq.isError
+                        ? "Shodan is temporarily unavailable."
+                        : "No Shodan record is available for this host."}
+                  </CardContent>
+                )}
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

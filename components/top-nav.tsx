@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Search, Boxes, Zap, TerminalSquare } from "lucide-react";
+import { Shield, Search, Boxes, Zap, TerminalSquare, Globe } from "lucide-react";
 import AuthNav from "./auth-nav";
 
 const LINKS = [
   { href: "/", label: "Search", Icon: Search },
   { href: "/devices", label: "Devices", Icon: Boxes },
+  { href: "/domains", label: "Domains", Icon: Globe },
   { href: "/scans", label: "Scans", Icon: Zap },
   { href: "/cli", label: "CLI", Icon: TerminalSquare },
 ];
@@ -34,6 +35,8 @@ export default function TopNav({
     active ??
     (pathname.startsWith("/host") || pathname.startsWith("/devices")
       ? "/devices"
+      : pathname.startsWith("/domains")
+      ? "/domains"
       : pathname.startsWith("/cli")
       ? "/cli"
       : pathname.startsWith("/scan")

@@ -432,7 +432,19 @@ function HostDetailInner({ ip }: { ip: string }) {
                 <IntelRow
                   icon={<Network />}
                   label="Reverse DNS"
-                  value={dnsq.isLoading ? "resolving…" : reverseDns}
+                  value={
+                    dnsq.isLoading ? (
+                      "resolving…"
+                    ) : hasPtr ? (
+                      <Link
+                        href={`/domains?d=${encodeURIComponent(dnsData!.reverse[0])}`}
+                        title="View certificates and subdomains for this hostname"
+                        className="hover:text-beam hover:underline"
+                      >
+                        {reverseDns}
+                      </Link>
+                    ) : null
+                  }
                   mono
                 />
                 <IntelRow

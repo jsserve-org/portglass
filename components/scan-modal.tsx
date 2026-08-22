@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Play, Radio, ChevronDown, ChevronUp, ShieldOff, Crosshair, Microscope, Zap, Repeat, Ban, Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -214,19 +214,70 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
     }
   }
 
+  // Numeric advanced fields: clearing an input used to set NaN, which
+  // JSON-serializes to null and reached the API. Fall back to the previous
+  // valid value instead.
+  const setThreadsSafe = (v: string) => {
+    const n = parseInt(v, 10);
+    if (!Number.isNaN(n)) setThreads(Math.min(8, Math.max(1, n)));
+  };
+  const setConcurrencySafe = (v: string) => {
+    const n = parseInt(v, 10);
+    if (!Number.isNaN(n)) setConcurrency(Math.min(2048, Math.max(1, n)));
+  };
+  const setTimeoutSafe = (v: string) => {
+    const n = parseFloat(v);
+    if (!Number.isNaN(n)) setTimeout(Math.min(10, Math.max(0.1, Math.round(n * 10) / 10)));
+  };
+  const setRateSafe = (v: string) => {
+    const n = parseFloat(v);
+    if (!Number.isNaN(n)) setRate(Math.min(10000, Math.max(0, Math.round(n))));
+  };
+
+  // Dialog semantics: Escape closes (unless a scan is submitting — an
+  // accidental dismiss mid-flight used to discard the whole form), focus moves
+  // into the dialog on open and returns to the trigger on close.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    cardRef.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+    return () => restoreRef.current?.focus?.();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [loading, onClose]);
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      onClick={loading ? undefined : onClose}
+      role="presentation"
+    >
+      <div
+        ref={cardRef}
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Start a new scan"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h3><Radio size={16} /> New Scan</h3>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          <button className="modal-close" onClick={onClose} aria-label="Close dialog" disabled={loading}><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            {error && <div className="modal-error">{error}</div>}
+            {error && <div className="modal-error" role="alert">{error}</div>}
 
-            <label className="modal-label">Target CIDR</label>
+            <label className="modal-label" htmlFor="scan-cidr">Target CIDR</label>
             <input
+              id="scan-cidr"
               className="modal-input"
               value={cidr}
               onChange={(e) => setCidr(e.target.value)}
@@ -234,8 +285,9 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               required
             />
 
-            <label className="modal-label">Label <span className="modal-optional">(optional)</span></label>
+            <label className="modal-label" htmlFor="scan-label">Label <span className="modal-optional">(optional)</span></label>
             <input
+              id="scan-label"
               className="modal-input"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -243,8 +295,8 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               maxLength={80}
             />
 
-            <label className="modal-label">Ports to scan</label>
-            <select className="modal-input" value={preset} onChange={(e) => setPreset(e.target.value)}>
+            <label className="modal-label" htmlFor="scan-preset">Ports to scan</label>
+            <select id="scan-preset" className="modal-input" value={preset} onChange={(e) => setPreset(e.target.value)}>
               {PRESETS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
@@ -256,17 +308,19 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                 value={customPorts}
                 onChange={(e) => setCustomPorts(e.target.value)}
                 placeholder="80,443,8080 or 1-1024"
+                aria-label="Custom ports"
               />
             )}
             <p className="-mt-1 mb-1 text-[11px] leading-snug text-muted-foreground">
               This is the full port scope. Smart scan uses a small high-signal subset of this selection first, then scans the full selection only on responsive hosts.
             </p>
 
-            <label className="modal-label">
+            <label className="modal-label" htmlFor="scan-exclude-ports">
               <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ports</span>
               <span className="modal-optional">(optional)</span>
             </label>
             <input
+              id="scan-exclude-ports"
               className="modal-input"
               value={excludePorts}
               onChange={(e) => setExcludePorts(e.target.value)}
@@ -276,11 +330,12 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               These ports are removed from this scan before targets are generated, so they are never probed.
             </p>
 
-            <label className="modal-label">
+            <label className="modal-label" htmlFor="scan-exclude">
               <span className="inline-flex items-center gap-1.5"><Ban size={12} /> Exclude ranges</span>
               <span className="modal-optional">(optional)</span>
             </label>
             <textarea
+              id="scan-exclude"
               className="modal-input"
               value={exclude}
               onChange={(e) => setExclude(e.target.value)}
@@ -292,10 +347,10 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               Addresses in these ranges are skipped for this scan only — one per line or comma-separated. Global skip subnets still apply on top.
             </p>
 
-            <label className="modal-label">
+            <label className="modal-label" htmlFor="scan-repeat">
               <span className="inline-flex items-center gap-1.5"><Repeat size={12} /> Repeat</span>
             </label>
-            <select className="modal-input" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+            <select id="scan-repeat" className="modal-input" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
               {REPEATS.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
@@ -369,20 +424,20 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
               <div className="modal-advanced">
                 <div className="modal-row">
                   <div>
-                    <label className="modal-label-small">Threads (max 8)</label>
-                    <input className="modal-input-small" type="number" min={1} max={8} value={threads} onChange={(e) => setThreads(parseInt(e.target.value))} />
+                    <label className="modal-label-small" htmlFor="scan-threads">Threads (max 8)</label>
+                    <input id="scan-threads" className="modal-input-small" type="number" min={1} max={8} value={threads} onChange={(e) => setThreadsSafe(e.target.value)} />
                   </div>
                   <div>
-                    <label className="modal-label-small">Concurrency</label>
-                    <input className="modal-input-small" type="number" min={1} max={2048} value={concurrency} onChange={(e) => setConcurrency(parseInt(e.target.value))} />
+                    <label className="modal-label-small" htmlFor="scan-concurrency">Concurrency</label>
+                    <input id="scan-concurrency" className="modal-input-small" type="number" min={1} max={2048} value={concurrency} onChange={(e) => setConcurrencySafe(e.target.value)} />
                   </div>
                   <div>
-                    <label className="modal-label-small">Timeout (s)</label>
-                    <input className="modal-input-small" type="number" min={0.1} max={10} step={0.1} value={timeout} onChange={(e) => setTimeout(parseFloat(e.target.value))} />
+                    <label className="modal-label-small" htmlFor="scan-timeout">Timeout (s)</label>
+                    <input id="scan-timeout" className="modal-input-small" type="number" min={0.1} max={10} step={0.1} value={timeout} onChange={(e) => setTimeoutSafe(e.target.value)} />
                   </div>
                   <div>
-                    <label className="modal-label-small">Rate/s</label>
-                    <input className="modal-input-small" type="number" min={0} max={10000} value={rate} onChange={(e) => setRate(parseFloat(e.target.value))} />
+                    <label className="modal-label-small" htmlFor="scan-rate">Rate/s</label>
+                    <input id="scan-rate" className="modal-input-small" type="number" min={0} max={10000} value={rate} onChange={(e) => setRateSafe(e.target.value)} />
                   </div>
                 </div>
                 {stealth && (
@@ -396,8 +451,9 @@ export default function ScanModal({ onClose, onStarted }: { onClose: () => void;
                   </p>
                 )}
                 <div style={{ marginTop: 10 }}>
-                  <label className="modal-label-small">SOCKS5 Proxy (optional)</label>
+                  <label className="modal-label-small" htmlFor="scan-proxy">SOCKS5 Proxy (optional)</label>
                   <input
+                    id="scan-proxy"
                     className="modal-input"
                     value={proxy}
                     onChange={(e) => setProxy(e.target.value)}

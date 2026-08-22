@@ -57,6 +57,13 @@
       "when": 1786634694424,
       "tag": "0007_free_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787375551163,
+      "tag": "0008_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

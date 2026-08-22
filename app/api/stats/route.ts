@@ -35,5 +35,8 @@ export async function GET() {
     };
   });
 
-  return Response.json(payload);
+  return Response.json(payload, {
+    // Match the 30s server cache so poll ticks between rebuilds are free.
+    headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=30' },
+  });
 }

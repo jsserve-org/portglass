@@ -31,5 +31,7 @@ export async function GET() {
     return { asns: res.rows as { asn: number; org: string | null; count: number }[] };
   });
 
-  return Response.json(payload);
+  return Response.json(payload, {
+    headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+  });
 }

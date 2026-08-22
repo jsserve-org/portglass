@@ -45,7 +45,7 @@ export default function TopNav({
 
   return (
     <>
-      <nav className="topnav">
+      <nav className="topnav" aria-label="Primary">
         <div className="nav-left">
           <Link href="/" className="logo">
             <Shield size={22} />

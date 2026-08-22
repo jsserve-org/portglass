@@ -62,8 +62,10 @@ export function launchScanner(runId: number, args: string[], env: NodeJS.Process
           .then((m) => m.dispatchQueued())
           .catch((err) => console.error('dispatchQueued after exit failed', err));
         // Refresh persisted device labels for the hosts this scan just found.
+        // Incremental: only re-classify IPs this run touched, not the whole
+        // table (a full regex rebuild here used to spike CPU after every scan).
         import('@/lib/host-devices')
-          .then((m) => m.refreshHostDevices())
+          .then((m) => m.refreshHostDevices(runId))
           .catch((err) => console.error('refreshHostDevices after exit failed', err));
         // Bounded, terms-aware Shodan comparison for US hosts discovered by
         // this completed run. It is detached from queue dispatch and cannot

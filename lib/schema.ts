@@ -31,7 +31,12 @@ export const scanRuns = pgTable('scan_runs', {
   // Null means the scan came from the website or scheduler.
   cliDeviceId: text('cli_device_id'),
   requestedBy: text('requested_by'),
-});
+}, (table) => ({
+  // /api/runs sorts by started_at DESC on every poll; the CLI lists a user's
+  // runs by requested_by. Both tables grow forever (one row per scan).
+  startedIdx: index('idx_scan_runs_started').on(table.startedAt),
+  requestedByIdx: index('idx_scan_runs_requested_by').on(table.requestedBy),
+}));
 
 export const portFindings = pgTable('port_findings', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
@@ -50,6 +55,11 @@ export const portFindings = pgTable('port_findings', {
   ipIdx: index('idx_port_findings_ip').on(table.ip),
   portIdx: index('idx_port_findings_port').on(table.port),
   observedIdx: index('idx_port_findings_observed').on(table.observedAt),
+  // The search view does `DISTINCT ON (ip) ... ORDER BY ip, observed_at DESC`
+  // on every request; (ip) alone forced a full sort of all matching rows.
+  ipObservedIdx: index('idx_port_findings_ip_observed').on(table.ip, table.observedAt.desc()),
+  // Same shape for the port-filtered path of the search view.
+  portObservedIdx: index('idx_port_findings_port_observed').on(table.port, table.observedAt.desc()),
 }));
 
 // Better-auth tables
@@ -115,6 +125,8 @@ export const shares = pgTable('shares', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   refIdx: index('idx_shares_ref').on(table.kind, table.refId),
+  // The share-management list sorts by created_at DESC.
+  createdIdx: index('idx_shares_created').on(table.createdAt),
 }));
 
 // Persisted per-host device classification (camera / printer / firewall / …).
@@ -204,7 +216,10 @@ export const shodanHostCache = pgTable('shodan_host_cache', {
   summary: text('summary').notNull(),
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
+}, (table) => ({
+  // Enrichment cycles sweep expired rows (`DELETE ... WHERE expires_at < now()`).
+  expiryIdx: index('idx_shodan_host_cache_expires').on(table.expiresAt),
+}));
 
 export const shodanLookupLog = pgTable('shodan_lookup_log', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

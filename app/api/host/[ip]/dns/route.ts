@@ -13,8 +13,28 @@ export type HostDns = {
 };
 
 // DNS is comparatively slow and rarely changes; cache per IP for an hour.
+// Bounded: a /16 scan with DNS lookups could add ~65k entries (tens of MB in
+// the memory-capped container). Evict expired entries once the map grows.
 const cache = new Map<string, { data: HostDns; expires: number }>();
 const TTL_MS = 60 * 60 * 1000;
+const MAX_ENTRIES = 10_000;
+
+function cacheSet(ip: string, data: HostDns) {
+  if (cache.size >= MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [key, value] of cache) {
+      if (value.expires <= now) cache.delete(key);
+      if (cache.size < MAX_ENTRIES) break;
+    }
+    // Still full? Drop the oldest entries (Map preserves insertion order).
+    while (cache.size >= MAX_ENTRIES) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+  }
+  cache.set(ip, { data, expires: Date.now() + TTL_MS });
+}
 
 export async function GET(_request: Request, { params }: { params: Promise<{ ip: string }> }) {
   if (authEnabled) {
@@ -54,6 +74,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
   const fcrdns = Object.values(forward).some((addrs) => addrs.includes(ip));
   const dynamic = detectDynamic(ip, reverse);
   const data: HostDns = { ip, reverse, forward, fcrdns, dynamic };
-  cache.set(ip, { data, expires: Date.now() + TTL_MS });
+  cacheSet(ip, data);
   return NextResponse.json(data);
 }

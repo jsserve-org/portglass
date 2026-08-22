@@ -133,56 +133,67 @@ export async function GET(request: Request) {
 
   // The search view auto-refreshes; identical queries (same filter + page) are
   // common across refreshes/clients. Cache the heavy geo-enriched result 10s.
-  const cacheKey = `findings:${port ?? ''}:${query.q}:${query.page}:${query.pageSize}:${query.device ?? ''}:${query.asn ?? ''}:${query.software ?? ''}`;
-  const payload = await cached(cacheKey, 10_000, async () => {
-    const [rowsResult, totalRows] = await Promise.all([
-      db.execute(rowsQuery),
-      db.execute(countQuery),
-    ]);
-
-    const rows = rowsResult.rows as any[];
-    const ips = [...new Set(rows.map((r) => String(r.ip)))];
-    const deviceByIp = new Map<string, DeviceType>();
-    const portsByIp = new Map<string, { port: number; service: string | null }[]>();
-    if (ips.length) {
-      // Badge each card from the pre-labelled host_devices table — the same
-      // source the sidebar filter uses, so badges and filter always agree.
-      // And pull EVERY open port per host so a card lists all of them, not just
-      // the representative row.
-      const [labelled, portsRes] = await Promise.all([
-        db.execute(sql`
-          SELECT ip, device_type FROM host_devices WHERE ip = ANY(${sqlArray(ips)}::text[])
-        `),
-        db.execute(sql`
-          SELECT DISTINCT ON (ip, port) ip::text AS ip, port, service
-          FROM port_findings
-          WHERE ip = ANY(${sqlArray(ips)}::text[]) AND ${notJunk}
-          ORDER BY ip, port, observed_at DESC
-        `),
-      ]);
-      for (const r of labelled.rows as any[]) deviceByIp.set(String(r.ip), r.device_type as DeviceType);
-      for (const r of portsRes.rows as any[]) {
-        const list = portsByIp.get(r.ip) ?? [];
-        list.push({ port: r.port, service: r.service ?? null });
-        portsByIp.set(r.ip, list);
+  // The total is cached separately and keyed only by the filters: paging to
+  // page N used to recompute COUNT(DISTINCT ip) over the whole filtered set
+  // every time just because the cache key contained the page number.
+  const filterKey = `${port ?? ''}:${query.q}:${query.device ?? ''}:${query.asn ?? ''}:${query.software ?? ''}`;
+  const [payload, totalRows] = await Promise.all([
+    cached(`findings-page:${filterKey}:${query.page}:${query.pageSize}`, 10_000, async () => {
+      const rowsResult = await db.execute(rowsQuery);
+      const rows = rowsResult.rows as any[];
+      const ips = [...new Set(rows.map((r) => String(r.ip)))];
+      const deviceByIp = new Map<string, DeviceType>();
+      const portsByIp = new Map<string, { port: number; service: string | null }[]>();
+      if (ips.length) {
+        // Badge each card from the pre-labelled host_devices table — the same
+        // source the sidebar filter uses, so badges and filter always agree.
+        // And pull EVERY open port per host so a card lists all of them, not just
+        // the representative row.
+        const [labelled, portsRes] = await Promise.all([
+          db.execute(sql`
+            SELECT ip, device_type FROM host_devices WHERE ip = ANY(${sqlArray(ips)}::text[])
+          `),
+          db.execute(sql`
+            SELECT DISTINCT ON (ip, port) ip::text AS ip, port, service
+            FROM port_findings
+            WHERE ip = ANY(${sqlArray(ips)}::text[]) AND ${notJunk}
+            ORDER BY ip, port, observed_at DESC
+          `),
+        ]);
+        for (const r of labelled.rows as any[]) deviceByIp.set(String(r.ip), r.device_type as DeviceType);
+        for (const r of portsRes.rows as any[]) {
+          const list = portsByIp.get(r.ip) ?? [];
+          list.push({ port: r.port, service: r.service ?? null });
+          portsByIp.set(r.ip, list);
+        }
       }
-    }
 
-    return {
-      rows: rows.map((r) => {
-        const t = deviceByIp.get(String(r.ip));
-        return {
-          ...r,
-          device: t && t !== 'unknown' ? { type: t, label: deviceLabel(t) } : null,
-          ports: (portsByIp.get(String(r.ip)) ?? [{ port: r.port, service: r.service }])
-            .sort((a, b) => a.port - b.port),
-        };
-      }),
-      total: Number((totalRows.rows[0] as any)?.value ?? 0),
-      page: query.page,
-      pageSize: query.pageSize,
-    };
-  });
+      return {
+        rows: rows.map((r) => {
+          const t = deviceByIp.get(String(r.ip));
+          return {
+            ...r,
+            device: t && t !== 'unknown' ? { type: t, label: deviceLabel(t) } : null,
+            ports: (portsByIp.get(String(r.ip)) ?? [{ port: r.port, service: r.service }])
+              .sort((a, b) => a.port - b.port),
+          };
+        }),
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+    }),
+    cached(`findings-total:${filterKey}`, 30_000, async () => {
+      const res = await db.execute(countQuery);
+      return Number((res.rows[0] as any)?.value ?? 0);
+    }),
+  ]);
 
-  return Response.json(payload);
+  return Response.json(
+    { ...payload, total: totalRows },
+    {
+      // Private browser cache tuned to the poll cadence: identical back-to-back
+      // fetches (back/forward, remounts) skip the network entirely.
+      headers: { 'Cache-Control': 'private, max-age=5, stale-while-revalidate=15' },
+    },
+  );
 }

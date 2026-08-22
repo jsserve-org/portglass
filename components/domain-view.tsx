@@ -1,7 +1,6 @@
 "use client";
 
-import { useQuery, QueryClientProvider } from "@tanstack/react-query";
-import { makeQueryClient } from "@/lib/query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Globe,
   Search,
@@ -18,8 +17,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { DomainResult, SubdomainEntry } from "@/lib/crtsh";
-
-const queryClient = makeQueryClient();
 
 const PAGE_SIZE = 200;
 
@@ -39,16 +36,26 @@ function DomainViewInner() {
   const urlDomain = (sp.get("d") || "").toLowerCase();
   const [input, setInput] = useState(urlDomain);
   const [filter, setFilter] = useState("");
+  // Debounced mirror of `filter`: CT result sets can be thousands of names,
+  // and re-filtering + re-joining on every keystroke stalled the main thread.
+  const [appliedFilter, setAppliedFilter] = useState("");
   const [sort, setSort] = useState<SortMode>("name");
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   useEffect(() => setInput(urlDomain), [urlDomain]);
+
+  // 150ms debounce for the filter input.
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedFilter(filter), 150);
+    return () => clearTimeout(t);
+  }, [filter]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const d = input.trim().toLowerCase().replace(/^\*\./, "");
     if (!d) return;
     setFilter("");
+    setAppliedFilter("");
     setVisible(PAGE_SIZE);
     router.push(`/domains?d=${encodeURIComponent(d)}`);
   };
@@ -71,20 +78,28 @@ function DomainViewInner() {
   const names = q.data?.names ?? [];
   const result = q.data;
 
+  // Precompute epoch timestamps once per dataset instead of calling Date.parse
+  // twice per comparison inside the sort comparator (O(n log n) parses).
+  const tsByName = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const n of names) m.set(n.name, n.lastSeen ? Date.parse(n.lastSeen) : 0);
+    return m;
+  }, [names]);
+
   const shown = useMemo(() => {
-    const f = filter.trim().toLowerCase();
+    const f = appliedFilter.trim().toLowerCase();
     let list: SubdomainEntry[] = f
       ? names.filter((n) => n.name.includes(f))
       : names;
     if (sort === "recent") {
       list = [...list].sort(
-        (a, b) => (b.lastSeen ? Date.parse(b.lastSeen) : 0) - (a.lastSeen ? Date.parse(a.lastSeen) : 0)
+        (a, b) => (tsByName.get(b.name) ?? 0) - (tsByName.get(a.name) ?? 0)
       );
     } else if (sort === "certs") {
       list = [...list].sort((a, b) => b.certs - a.certs);
     }
     return list;
-  }, [names, filter, sort]);
+  }, [names, appliedFilter, sort, tsByName]);
 
   const allNamesText = useMemo(() => shown.map((n) => n.name).join("\n"), [shown]);
 
@@ -116,6 +131,7 @@ function DomainViewInner() {
               spellCheck={false}
               autoCapitalize="none"
               autoComplete="off"
+              aria-label="Domain to search"
               className="w-full rounded-sm border border-input bg-secondary py-2 pl-8 pr-3 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:border-beam focus:outline-none"
             />
           </div>
@@ -204,12 +220,14 @@ function DomainViewInner() {
                   }}
                   placeholder="Filter hostnames…"
                   spellCheck={false}
+                  aria-label="Filter hostnames"
                   className="w-56 rounded-sm border border-input bg-secondary py-1.5 pl-7 pr-2.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-beam focus:outline-none"
                 />
               </div>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortMode)}
+                aria-label="Sort hostnames"
                 className="rounded-sm border border-input bg-secondary px-2 py-1.5 font-mono text-xs text-foreground focus:border-beam focus:outline-none"
               >
                 <option value="name">Sort: A → Z</option>
@@ -283,18 +301,16 @@ function DomainViewInner() {
 
 export default function DomainView() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Suspense
-        fallback={
-          <div className="app">
-            <div className="loading-screen">
-              <span className="spinner" />
-            </div>
+    <Suspense
+      fallback={
+        <div className="app">
+          <div className="loading-screen">
+            <span className="spinner" />
           </div>
-        }
-      >
-        <DomainViewInner />
-      </Suspense>
-    </QueryClientProvider>
+        </div>
+      }
+    >
+      <DomainViewInner />
+    </Suspense>
   );
 }

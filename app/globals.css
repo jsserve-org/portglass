@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -40,9 +38,11 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .28);
   --shadow-lg: 0 20px 46px -22px rgba(0, 0, 0, .62);
 
-  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --font-cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Fonts are self-hosted via next/font (see app/layout.tsx); the variables
+     fall back to system stacks if the font modules ever fail to load. */
+  --font-ui: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
+  --font-cond: var(--font-plex-cond), var(--font-plex-sans), sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1293,7 +1293,14 @@ a.results-export { text-decoration: none; }
 
 /* ============ Progress bar ============ */
 .progress-track { height: 6px; background: var(--bg); border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }
-.progress-fill { height: 100%; background: var(--signal); transition: width 0.6s ease; }
+/* Progress bars animate transform (compositor-only) instead of width, which
+   forced layout+paint on every frame of a live scan's 0.6s transition. */
+.progress-fill {
+  height: 100%;
+  background: var(--signal);
+  transform-origin: left center;
+  transition: transform 0.6s ease;
+}
 
 .scan-progress-box { padding: 16px 18px; border-radius: 2px; background: var(--bg-card); border: 1px solid var(--border); border-left: 2px solid var(--beam); margin-bottom: 24px; }
 /* ============ Share button + modal ============ */
@@ -1504,6 +1511,23 @@ a.results-export { text-decoration: none; }
   .findings-table.table-hosts td:nth-child(5)::before { content: "Last Seen"; }
   .findings-table.table-hosts td:nth-child(6)::before { content: "Services"; }
   .findings-table.table-hosts td:nth-child(7)::before { content: ""; }
+  /* host detail service table: 8 columns with their own order — the generic
+     labels above mislabeled every field on phones ("Seen" read as "Latency"). */
+  .findings-table.table-hostdetail td:nth-child(1)::before { content: "Port"; }
+  .findings-table.table-hostdetail td:nth-child(2)::before { content: "Scan"; }
+  .findings-table.table-hostdetail td:nth-child(3)::before { content: "Seen"; }
+  .findings-table.table-hostdetail td:nth-child(4)::before { content: "Latency"; }
+  .findings-table.table-hostdetail td:nth-child(5)::before { content: "Banner"; }
+  .findings-table.table-hostdetail td:nth-child(6)::before { content: "Headers"; }
+  .findings-table.table-hostdetail td:nth-child(7)::before { content: "Tools"; }
+  .findings-table.table-hostdetail td:nth-child(8)::before { content: "Open"; }
+  /* shared report snapshot: IP, Port, Service, Product, Latency, Banner */
+  .findings-table.table-share td:nth-child(1)::before { content: "IP"; }
+  .findings-table.table-share td:nth-child(2)::before { content: "Port"; }
+  .findings-table.table-share td:nth-child(3)::before { content: "Service"; }
+  .findings-table.table-share td:nth-child(4)::before { content: "Product"; }
+  .findings-table.table-share td:nth-child(5)::before { content: "Latency"; }
+  .findings-table.table-share td:nth-child(6)::before { content: "Banner"; }
   .findings-table .cell-ellipsis { max-width: none; }
   .headers-block { grid-column: 1 / -1; max-height: 220px; font-size: 10px; }
   .header-toggle { min-height: 34px; justify-content: center; }
@@ -1518,3 +1542,76 @@ a.results-export { text-decoration: none; }
 
   .danger-action-btn { width: 100%; min-height: 42px; }
 }
+
+/* ---------- Loading skeletons ---------- */
+.skeleton-card {
+  height: 150px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: linear-gradient(100deg, var(--bg-card) 40%, var(--bg-3) 50%, var(--bg-card) 60%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+/* Dim (don't hide) the previous page of results while the next one loads. */
+.results-refreshing { opacity: 0.55; transition: opacity 0.2s ease; }
+
+/* Header slot reserved while /api/me resolves, so nothing jumps. */
+.auth-loading {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease infinite;
+}
+
+/* ---------- AI summary as plain text ---------- */
+.ai-body-text { white-space: pre-wrap; word-break: break-word; }
+
+/* ---------- Toasts ---------- */
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 18px;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+@media (max-width: 640px) {
+  .toast-stack { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); right: 12px; }
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  animation: toast-in 0.18s ease;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast-success svg { color: var(--signal); flex-shrink: 0; margin-top: 1px; }
+.toast-error { border-color: color-mix(in srgb, var(--red) 55%, var(--border-light)); }
+.toast-error svg { color: var(--red); flex-shrink: 0; margin-top: 1px; }
+.toast-message { min-width: 0; overflow-wrap: anywhere; }
+.toast-close {
+  margin-left: auto;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.toast-close:hover { color: var(--text); }

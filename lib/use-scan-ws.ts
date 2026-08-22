@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+"use client";
+
 import { useQueryClient } from "@tanstack/react-query";
+import { useLiveSocket } from "./use-live-socket";
 
 /**
  * Subscribe to one scan's live detail over the WebSocket (/api/ws/scans).
@@ -13,66 +15,15 @@ import { useQueryClient } from "@tanstack/react-query";
  */
 export function useScanWs(runId: string | number): boolean {
   const qc = useQueryClient();
-  const [connected, setConnected] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !("WebSocket" in window)) return;
-
-    let ws: WebSocket | null = null;
-    let stopped = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/ws/scans`;
-
-    const connect = () => {
-      if (stopped) return;
-      try {
-        ws = new WebSocket(url);
-      } catch {
-        return;
+  const connected = useLiveSocket({
+    onMessage: (msg) => {
+      if (msg?.type === "scan" && String(msg.runId) === String(runId)) {
+        qc.setQueryData(["scan", String(runId)], msg.data);
       }
-      ws.onopen = () => {
-        setConnected(true);
-        try {
-          ws?.send(JSON.stringify({ type: "subscribe", runId }));
-        } catch {
-          /* will resubscribe on reconnect */
-        }
-      };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg?.type === "scan" && String(msg.runId) === String(runId)) {
-            qc.setQueryData(["scan", String(runId)], msg.data);
-          }
-        } catch {
-          /* ignore malformed frame */
-        }
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (!stopped) retry = setTimeout(connect, 4000);
-      };
-      ws.onerror = () => {
-        try {
-          ws?.close();
-        } catch {
-          /* noop */
-        }
-      };
-    };
-
-    connect();
-    return () => {
-      stopped = true;
-      if (retry) clearTimeout(retry);
-      try {
-        ws?.close();
-      } catch {
-        /* noop */
-      }
-    };
-  }, [qc, runId]);
+    },
+    onOpen: (send) => send(JSON.stringify({ type: "subscribe", runId })),
+  });
 
   return connected;
 }

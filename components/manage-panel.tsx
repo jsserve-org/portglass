@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Repeat, Ban, Trash2, Plus, ChevronDown, ChevronUp, Pause, Play } from "lucide-react";
+import { toast } from "./toast";
+import { fmtDateTime } from "@/lib/format";
 
 type Schedule = {
   id: number;
@@ -30,7 +32,7 @@ function humanInterval(min: number): string {
 function nextRunLabel(schedule: Schedule): string {
   const next = new Date(schedule.nextRunAt);
   if (schedule.enabled && next.getTime() <= Date.now()) return "due now";
-  return next.toLocaleString();
+  return fmtDateTime(next);
 }
 
 async function jsonFetch(url: string, init?: RequestInit) {
@@ -45,15 +47,23 @@ export default function ManagePanel() {
   const [skipCidr, setSkipCidr] = useState("");
   const [skipReason, setSkipReason] = useState("");
   const [skipErr, setSkipErr] = useState("");
+  // Per-row pending state so a slow toggle/delete can't be double-clicked and
+  // shows the click registered.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [addingSkip, setAddingSkip] = useState(false);
 
+  // The header always shows the counts (one fetch on mount), but the 30s poll
+  // only runs while the panel is expanded — no background chatter for data the
+  // collapsed panel never displays.
   const schedules = useQuery({
     queryKey: ["schedules"],
     queryFn: () => jsonFetch("/api/schedules") as Promise<{ schedules: Schedule[] }>,
-    refetchInterval: 30000,
+    refetchInterval: open ? 30000 : false,
   });
   const skips = useQuery({
     queryKey: ["skip-subnets"],
     queryFn: () => jsonFetch("/api/skip-subnets") as Promise<{ subnets: SkipSubnet[] }>,
+    refetchInterval: open ? 30000 : false,
   });
 
   const scheduleRows = schedules.data?.schedules ?? [];
@@ -61,20 +71,37 @@ export default function ManagePanel() {
   const activeSchedules = scheduleRows.filter((s) => s.enabled).length;
 
   const toggleSchedule = async (s: Schedule) => {
-    await jsonFetch(`/api/schedules/${s.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !s.enabled }),
-    }).catch(() => {});
-    qc.invalidateQueries({ queryKey: ["schedules"] });
+    setBusyId(`s-${s.id}`);
+    try {
+      await jsonFetch(`/api/schedules/${s.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !s.enabled }),
+      });
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update schedule");
+    } finally {
+      setBusyId(null);
+    }
   };
-  const deleteSchedule = async (id: number) => {
-    await jsonFetch(`/api/schedules/${id}`, { method: "DELETE" }).catch(() => {});
-    qc.invalidateQueries({ queryKey: ["schedules"] });
+  const deleteSchedule = async (s: Schedule) => {
+    if (!window.confirm(`Delete the "${s.label || s.cidr}" recurring scan? This cannot be undone.`)) return;
+    setBusyId(`s-${s.id}`);
+    try {
+      await jsonFetch(`/api/schedules/${s.id}`, { method: "DELETE" });
+      toast.success("Schedule deleted");
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete schedule");
+    } finally {
+      setBusyId(null);
+    }
   };
   const addSkip = async () => {
     setSkipErr("");
     if (!skipCidr.trim()) return;
+    setAddingSkip(true);
     try {
       await jsonFetch("/api/skip-subnets", {
         method: "POST",
@@ -86,11 +113,22 @@ export default function ManagePanel() {
       qc.invalidateQueries({ queryKey: ["skip-subnets"] });
     } catch (e: any) {
       setSkipErr(e.message || "Failed to add");
+    } finally {
+      setAddingSkip(false);
     }
   };
-  const deleteSkip = async (id: number) => {
-    await jsonFetch(`/api/skip-subnets?id=${id}`, { method: "DELETE" }).catch(() => {});
-    qc.invalidateQueries({ queryKey: ["skip-subnets"] });
+  const deleteSkip = async (s: SkipSubnet) => {
+    if (!window.confirm(`Stop skipping ${s.cidr}? Future scans will include it.`)) return;
+    setBusyId(`k-${s.id}`);
+    try {
+      await jsonFetch(`/api/skip-subnets?id=${s.id}`, { method: "DELETE" });
+      toast.success("Skip subnet removed");
+      qc.invalidateQueries({ queryKey: ["skip-subnets"] });
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to remove skip subnet");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -139,15 +177,19 @@ export default function ManagePanel() {
                     <button
                       type="button"
                       onClick={() => toggleSchedule(s)}
+                      disabled={busyId === `s-${s.id}`}
                       title={s.enabled ? "Pause" : "Resume"}
+                      aria-label={`${s.enabled ? "Pause" : "Resume"} schedule ${s.label || s.cidr}`}
                       className={`inline-flex size-6 items-center justify-center rounded-sm border ${s.enabled ? "border-signal text-signal" : "border-input text-[var(--text-dim)]"}`}
                     >
                       {s.enabled ? <Pause size={12} /> : <Play size={12} />}
                     </button>
                     <button
                       type="button"
-                      onClick={() => deleteSchedule(s.id)}
+                      onClick={() => deleteSchedule(s)}
+                      disabled={busyId === `s-${s.id}`}
                       title="Delete schedule"
+                      aria-label={`Delete schedule ${s.label || s.cidr}`}
                       className="inline-flex size-6 items-center justify-center rounded-sm border border-input text-[var(--text-dim)] hover:border-destructive hover:text-destructive"
                     >
                       <Trash2 size={12} />
@@ -169,6 +211,7 @@ export default function ManagePanel() {
                 onChange={(e) => setSkipCidr(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addSkip()}
                 placeholder="10.0.0.0/8 or 2001:db8::/32"
+                aria-label="Skip subnet CIDR"
                 className="min-w-[140px] flex-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground"
               />
               <input
@@ -176,14 +219,16 @@ export default function ManagePanel() {
                 onChange={(e) => setSkipReason(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addSkip()}
                 placeholder="reason (optional)"
+                aria-label="Skip reason (optional)"
                 className="min-w-[100px] flex-1 rounded-sm border border-input bg-secondary px-2 py-1 text-[11px] text-foreground"
               />
               <button
                 type="button"
                 onClick={addSkip}
-                className="inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground hover:border-signal hover:text-signal"
+                disabled={addingSkip}
+                className="inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground hover:border-signal hover:text-signal disabled:opacity-50"
               >
-                <Plus size={12} /> Add
+                <Plus size={12} /> {addingSkip ? "Adding…" : "Add"}
               </button>
             </div>
             {skipErr && <p className="mb-1.5 text-[11px] text-destructive">{skipErr}</p>}
@@ -206,8 +251,10 @@ export default function ManagePanel() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => deleteSkip(s.id)}
+                      onClick={() => deleteSkip(s)}
+                      disabled={busyId === `k-${s.id}`}
                       title="Remove from skip list"
+                      aria-label={`Stop skipping ${s.cidr}`}
                       className="inline-flex size-6 items-center justify-center rounded-sm border border-input text-[var(--text-dim)] hover:border-destructive hover:text-destructive"
                     >
                       <Trash2 size={12} />

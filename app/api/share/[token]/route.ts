@@ -52,7 +52,26 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 
 // POST /api/share/[token] -> public unlock. Body { password }. Returns the
 // snapshot data on success.
+// Public endpoint doing expensive scrypt work: rate-limit guesses per IP like
+// the CLI device-code route does, or this becomes a free CPU-DoS amplifier.
+const attempts = new Map<string, { count: number; resetAt: number }>();
+
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const client = request.headers.get('cf-connecting-ip')
+    || request.headers.get('x-forwarded-for')?.split(',')[0].trim()
+    || 'unknown';
+  const now = Date.now();
+  if (attempts.size > 1000) {
+    for (const [key, value] of attempts) if (value.resetAt <= now) attempts.delete(key);
+  }
+  const bucket = attempts.get(client);
+  if (bucket && bucket.resetAt > now && bucket.count >= 10) {
+    return NextResponse.json({ error: 'Too many attempts' }, { status: 429 });
+  }
+  attempts.set(client, bucket && bucket.resetAt > now
+    ? { count: bucket.count + 1, resetAt: bucket.resetAt }
+    : { count: 1, resetAt: now + 60_000 });
+
   const { token } = await params;
   const { share, state } = await load(token);
   if (state === 'not_found') return NextResponse.json({ error: 'not_found' }, { status: 404 });
@@ -64,7 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   } catch {
     /* allow empty body for no-password shares */
   }
-  if (!verifyPassword(String(body?.password ?? ''), share!.passwordHash)) {
+  if (!(await verifyPassword(String(body?.password ?? ''), share!.passwordHash))) {
     return NextResponse.json({ error: 'bad_password' }, { status: 401 });
   }
   return NextResponse.json({ ...meta(share!), data: JSON.parse(share!.snapshot) });

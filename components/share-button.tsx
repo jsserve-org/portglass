@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Share2, X, Trash2, ExternalLink } from "lucide-react";
 import CopyButton from "./copy-button";
+import { toast } from "./toast";
+import { fmtDate } from "@/lib/format";
 
 type ShareRow = {
   token: string;
@@ -28,6 +30,8 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<string | null>(null);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -35,11 +39,12 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
   const load = async () => {
     try {
       const r = await fetch("/api/share", { credentials: "include" });
-      if (!r.ok) return;
+      if (!r.ok) throw new Error(r.statusText || "Could not load share links");
       const all: ShareRow[] = await r.json();
       setRows(all.filter((s) => s.kind === kind && s.refId === refId && !s.revoked));
-    } catch {
-      /* ignore */
+      setLoadError(null);
+    } catch (e: any) {
+      setLoadError(e?.message || "Could not load share links");
     }
   };
 
@@ -81,9 +86,36 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
 
   const revoke = async (token: string) => {
     if (!window.confirm("Revoke this share link? Anyone with the URL will lose access.")) return;
-    await fetch(`/api/share/${token}`, { method: "DELETE", credentials: "include" });
-    await load();
+    setRevokingToken(token);
+    try {
+      const r = await fetch(`/api/share/${token}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error("Revoke failed");
+      toast.success("Share link revoked");
+      await load();
+    } catch {
+      toast.error("Couldn't revoke the link — it's still active, try again");
+    } finally {
+      setRevokingToken(null);
+    }
   };
+
+  // Dialog semantics: Escape closes, focus enters the dialog on open and
+  // returns to the trigger on close.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    cardRef.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      restoreRef.current?.focus?.();
+    };
+  }, [open]);
 
   return (
     <>
@@ -92,11 +124,18 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
       </button>
 
       {open && (
-        <div className="modal-overlay" onClick={() => setOpen(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => setOpen(false)} role="presentation">
+          <div
+            ref={cardRef}
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Share report"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3><Share2 size={16} /> Share {kind === "scan" ? "scan" : "host"} report</h3>
-              <button className="modal-close" onClick={() => setOpen(false)}><X size={16} /></button>
+              <button className="modal-close" onClick={() => setOpen(false)} aria-label="Close dialog"><X size={16} /></button>
             </div>
             <div className="modal-body">
               <p className="share-help">
@@ -104,15 +143,21 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
                 The snapshot is frozen — later scans never change it.
               </p>
 
-              {error && <div className="modal-error">{error}</div>}
+              {error && <div className="modal-error" role="alert">{error}</div>}
+              {loadError && (
+                <div className="modal-error" role="alert">
+                  {loadError}{" "}
+                  <button type="button" onClick={load} className="underline">Retry</button>
+                </div>
+              )}
 
-              <label className="modal-label">Title (optional)</label>
-              <input className="modal-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q2 perimeter report" />
+              <label className="modal-label" htmlFor="share-title">Title (optional)</label>
+              <input id="share-title" className="modal-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q2 perimeter report" />
 
               <div className="modal-row">
                 <div style={{ flex: 1 }}>
-                  <label className="modal-label-small">Expires</label>
-                  <select className="modal-input" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)}>
+                  <label className="modal-label-small" htmlFor="share-expires">Expires</label>
+                  <select id="share-expires" className="modal-input" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)}>
                     <option value="0">Never</option>
                     <option value="1">1 day</option>
                     <option value="7">7 days</option>
@@ -121,8 +166,8 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label className="modal-label-small">Password (optional)</label>
-                  <input className="modal-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Passphrase" autoComplete="new-password" />
+                  <label className="modal-label-small" htmlFor="share-password">Password (optional)</label>
+                  <input id="share-password" className="modal-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Passphrase" autoComplete="new-password" />
                 </div>
               </div>
 
@@ -153,12 +198,17 @@ export default function ShareButton({ kind, refId }: { kind: "scan" | "host"; re
                           </a>
                           <span className="share-list-meta">
                             {s.hasPassword ? "🔒 " : ""}
-                            {s.expiresAt ? `expires ${new Date(s.expiresAt).toLocaleDateString()}` : "no expiry"}
+                            {s.expiresAt ? `expires ${fmtDate(s.expiresAt)}` : "no expiry"}
                           </span>
                         </div>
                         <div className="share-list-actions">
                           <CopyButton text={url} title="Copy link" />
-                          <button className="share-revoke" onClick={() => revoke(s.token)} title="Revoke">
+                          <button
+                            className="share-revoke"
+                            onClick={() => revoke(s.token)}
+                            disabled={revokingToken === s.token}
+                            aria-label={`Revoke share link${s.title ? ` "${s.title}"` : ""}`}
+                          >
                             <Trash2 size={13} />
                           </button>
                         </div>

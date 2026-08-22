@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { LogIn, LogOut, User } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
@@ -30,7 +31,9 @@ export default function AuthNav() {
     window.location.href = "/login";
   };
 
-  if (!mounted) return null;
+  // Reserve a fixed-size slot until the session resolves so the sticky header
+  // doesn't visibly jump when the chip pops in.
+  if (!mounted) return <div className="auth-user auth-loading" style={{ minHeight: 28, width: 96 }} aria-hidden="true" />;
 
   // Signed in: show the account chip + sign-out.
   if (user) {
@@ -44,7 +47,7 @@ export default function AuthNav() {
           </div>
         )}
         <span className="auth-name">{user.name || user.email || "User"}</span>
-        <button className="auth-logout" onClick={handleSignOut} title="Sign out">
+        <button className="auth-logout" onClick={handleSignOut} title="Sign out" aria-label="Sign out">
           <LogOut size={14} />
         </button>
       </div>
@@ -55,10 +58,10 @@ export default function AuthNav() {
   // and it's obvious you're signed out (rather than silently showing nothing).
   if (authEnabled) {
     return (
-      <a href="/login" className="auth-btn">
+      <Link href="/login" className="auth-btn">
         <LogIn size={14} />
         <span className="auth-name">Sign in</span>
-      </a>
+      </Link>
     );
   }
 

@@ -1,15 +1,12 @@
 "use client";
 
-import { useQuery, QueryClientProvider } from "@tanstack/react-query";
-import { makeQueryClient } from "@/lib/query";
+import { useQuery } from "@tanstack/react-query";
 import { Boxes, ArrowRight } from "lucide-react";
 import TopNav from "./top-nav";
 import DeviceBadge from "./device-badge";
 import Link from "next/link";
 import { deviceLabel, type DeviceType } from "@/lib/classify";
 import type { DeviceTypeCount } from "@/lib/device-counts";
-
-const queryClient = makeQueryClient();
 
 // Order + one-line description per device type, shown as the tile subtitle.
 const CATALOG: { type: DeviceType; blurb: string }[] = [
@@ -101,9 +98,5 @@ function DevicesInner({ initialTypes }: { initialTypes: DeviceTypeCount[] }) {
 }
 
 export default function DevicesOverview({ initialTypes = [] }: { initialTypes?: DeviceTypeCount[] }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <DevicesInner initialTypes={initialTypes} />
-    </QueryClientProvider>
-  );
+  return <DevicesInner initialTypes={initialTypes} />;
 }

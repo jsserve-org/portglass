@@ -74,12 +74,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   // The scan-detail page AND the WebSocket poll this endpoint every ~2s. Cache
-  // the DB-heavy parts (findings scan + geo + the device-type classifier) for a
-  // couple of seconds so overlapping polls collapse into one query set instead
-  // of re-running the classifier every tick (which was OOM-spiraling the box).
+  // the DB-heavy parts (findings scan + geo + the device-type classifier) so
+  // overlapping polls collapse into one query set instead of re-running the
+  // classifier every tick (which was OOM-spiraling the box). A finished run can
+  // never gain findings, so its payload is immutable (a label edit PATCHes and
+  // invalidates this exact key) — serve it from a long cache instead of paying
+  // the per-run regex classifier every couple of seconds forever.
+  const finished = !!run[0].finishedAt;
   const { findings, hostCount, topServices, geo, deviceCounts } = await cached(
     `scan-detail:${runId}`,
-    2000,
+    finished ? 5 * 60_000 : 2_000,
     async () => {
       const findings = await db
         .select()

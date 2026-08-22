@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { db } from '@/lib/db';
 import { scanRuns } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { eq } from 'drizzle-orm';
+
+const execFileAsync = promisify(execFile);
 
 function pidIsAlive(pid: number) {
   try {
@@ -15,14 +18,15 @@ function pidIsAlive(pid: number) {
   }
 }
 
-function findScannerPids(runId: number): number[] {
+// Async so a slow pgrep can't freeze the whole event loop for up to 2s
+// (every request + WS heartbeat stalls behind a sync spawn).
+async function findScannerPids(runId: number): Promise<number[]> {
   const pids = new Set<number>();
   try {
-    const out = execFileSync('pgrep', ['-f', `fast_scan.py.*--run-id ${runId}`], {
-      encoding: 'utf8',
+    const { stdout } = await execFileAsync('pgrep', ['-f', `fast_scan.py.*--run-id ${runId}`], {
       timeout: 2000,
     });
-    for (const line of out.split(/\s+/)) {
+    for (const line of stdout.split(/\s+/)) {
       const pid = Number(line.trim());
       if (Number.isInteger(pid) && pid > 1 && pid !== process.pid) pids.add(pid);
     }
@@ -76,11 +80,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
 
   const pids = new Set<number>();
   if (run.scannerPid && run.scannerPid > 1) pids.add(run.scannerPid);
-  for (const pid of findScannerPids(runId)) pids.add(pid);
+  for (const pid of await findScannerPids(runId)) pids.add(pid);
 
-  for (const pid of pids) {
-    await forceKillPid(pid);
-  }
+  // Kill concurrently instead of serializing a 900ms grace wait per pid.
+  await Promise.all([...pids].map((pid) => forceKillPid(pid)));
 
   const killedPids = [...pids];
   await db

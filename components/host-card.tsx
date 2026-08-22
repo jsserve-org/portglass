@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, ExternalLink, Terminal, Wifi } from 'lucide-react';
-import Link from 'next/link';
-import CopyButton from './copy-button';
-import { curlFor } from '@/lib/commands';
-import DeviceBadge from './device-badge';
-import type { DeviceType } from '@/lib/classify';
+import { memo, useState } from "react";
+import { ChevronDown, ChevronUp, ExternalLink, Terminal, Wifi } from "lucide-react";
+import Link from "next/link";
+import CopyButton from "./copy-button";
+import { curlFor } from "@/lib/commands";
+import DeviceBadge from "./device-badge";
+import { timeAgo, timeProps } from "@/lib/format";
+import type { DeviceType } from "@/lib/classify";
 
 function flagEmoji(iso: string | null): string {
   if (!iso || iso.length !== 2) return '';
@@ -17,7 +18,10 @@ function flagEmoji(iso: string | null): string {
   );
 }
 
-export default function HostCard({
+// memo: the dashboard re-renders the whole results grid on every poll tick and
+// search keystroke; rows come from React Query's structural sharing, so an
+// unchanged finding keeps its object identity and skips re-rendering.
+const HostCard = memo(function HostCard({
   f,
   idx,
 }: {
@@ -75,12 +79,8 @@ export default function HostCard({
             <Wifi size={13} />
             {f.latencyMs != null ? `${f.latencyMs.toFixed(1)} ms` : '—'}
           </span>
-          <span className="date">
-            {new Date(f.observedAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
+          <span className="date" {...timeProps(f.observedAt)}>
+            {timeAgo(f.observedAt)}
           </span>
         </div>
       </div>
@@ -151,4 +151,6 @@ export default function HostCard({
       )}
     </article>
   );
-}
+});
+
+export default HostCard;

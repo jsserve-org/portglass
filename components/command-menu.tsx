@@ -39,12 +39,32 @@ export default function CommandMenu({
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const reposition = () => place();
+    // Escape closes and returns focus to the trigger; the menu previously had
+    // no keyboard exit at all.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        btnRef.current?.focus();
+      }
+    };
+    // Coalesce repositions to one layout read per frame — the capture-phase
+    // scroll listener previously measured on every scroll event.
+    let raf = 0;
+    const reposition = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        place();
+      });
+    };
     document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
     };
@@ -56,7 +76,7 @@ export default function CommandMenu({
       setCopied(cmd);
       setTimeout(() => setCopied((c) => (c === cmd ? null : c)), 1500);
     } catch {
-      /* clipboard blocked (e.g. non-secure context); ignore */
+      setCopied(null);
     }
   };
 
@@ -66,6 +86,8 @@ export default function CommandMenu({
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={cn(
           "inline-flex items-center gap-1 rounded-sm border border-input bg-secondary px-2 py-1 font-mono text-[11px] text-foreground hover:border-beam hover:text-beam",
           open && "border-beam text-beam"
@@ -77,6 +99,8 @@ export default function CommandMenu({
       {open && pos && (
         <div
           style={{ position: "fixed", top: pos.top, right: pos.right }}
+          role="menu"
+          aria-label="Tool commands"
           className="z-50 w-[340px] max-w-[80vw] overflow-hidden rounded-md border border-input bg-popover shadow-lg"
         >
           {commands.map((c) => {

@@ -4,6 +4,7 @@ import { portFindings, scanRuns } from '@/lib/schema';
 import { auth, authEnabled } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { eq, desc, sql } from 'drizzle-orm';
+import { cached } from '@/lib/cache';
 
 function buildPrompt(findings: any[], run: any): string {
   const hosts = new Set(findings.map((f) => f.ip)).size;
@@ -40,11 +41,13 @@ async function aiSummary(prompt: string): Promise<string | null> {
   const baseURL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   if (!apiKey) return null;
-  try {
-    const res = await fetch(`${baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
+    try {
+      const res = await fetch(`${baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        // Never let a hung upstream pin the request (and a pool slot) forever.
+        signal: AbortSignal.timeout(20_000),
+        body: JSON.stringify({
         model,
         messages: [
           { role: 'system', content: 'You are a concise network security analyst. Respond in 3 short paragraphs max. Use markdown.' },
@@ -106,19 +109,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const shodanHosts = Number((shodanRows.rows[0] as { count?: unknown } | undefined)?.count ?? 0);
 
   const prompt = buildPrompt(findings, run[0]);
-  const aiText = await aiSummary(prompt);
-
-  return NextResponse.json({
-    computed: {
-      hosts,
-      openPorts: findings.length,
-      portsScanned: ports,
-      topServices,
-      shodanHosts,
-      duration: run[0].finishedAt && run[0].startedAt
-        ? Math.round((new Date(run[0].finishedAt).getTime() - new Date(run[0].startedAt).getTime()) / 1000)
-        : null,
+  // The whole summary (stats + LLM call) is cached per run. Every visit used to
+  // pay a fresh multi-second OpenAI round-trip with no dedupe; finished runs
+  // are immutable so their summary caches for a day (keyed by finding count for
+  // still-running runs, whose result only gets staler by seconds).
+  const body = await cached(
+    `scan-summary:${runId}:${findings.length}`,
+    run[0].finishedAt ? 24 * 60 * 60_000 : 15_000,
+    async () => {
+      const aiText = await aiSummary(prompt);
+      return {
+        computed: {
+          hosts,
+          openPorts: findings.length,
+          portsScanned: ports,
+          topServices,
+          shodanHosts,
+          duration: run[0].finishedAt && run[0].startedAt
+            ? Math.round((new Date(run[0].finishedAt).getTime() - new Date(run[0].startedAt).getTime()) / 1000)
+            : null,
+        },
+        ai: aiText,
+      };
     },
-    ai: aiText,
-  });
+  );
+
+  return NextResponse.json(body);
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import React from 'react';
-import { QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { makeQueryClient } from '@/lib/query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   ChevronDown,
@@ -14,6 +13,7 @@ import {
   Radio,
   Search,
   Server,
+  TriangleAlert,
   X,
   Wifi,
   Zap,
@@ -21,8 +21,7 @@ import {
 import TopNav from "./top-nav";
 import HostCard from './host-card';
 import DeviceBadge from './device-badge';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { downloadText, toCsv } from '@/lib/export';
 import { deviceLabel, DEVICE_ORDER, type DeviceType } from '@/lib/classify';
 
@@ -73,6 +72,7 @@ function StatChip({ label, value, icon }: { label: string; value?: number; icon:
 }
 
 function DashboardInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialDevice = searchParams.get('device') as DeviceType | null;
   const initialAsn = searchParams.get('asn');
@@ -81,7 +81,10 @@ function DashboardInner() {
   // nothing, which made results feel jumpy and unreliable.
   const [q, setQ] = React.useState(searchParams.get('q') ?? '');
   const [queryDraft, setQueryDraft] = React.useState(searchParams.get('q') ?? '');
-  const [port, setPort] = React.useState('');
+  const [port, setPort] = React.useState(() => {
+    const p = searchParams.get('port');
+    return p && /^\d{1,5}$/.test(p) ? p : '';
+  });
   const [device, setDevice] = React.useState<DeviceType | ''>(
     initialDevice && DEVICE_ORDER.includes(initialDevice) ? initialDevice : ''
   );
@@ -91,7 +94,8 @@ function DashboardInner() {
   const [software, setSoftware] = React.useState<string>(searchParams.get('software') ?? '');
   const [showAllAsn, setShowAllAsn] = React.useState(false);
   const [showAllSoftware, setShowAllSoftware] = React.useState(false);
-  const [page, setPage] = React.useState(1);
+  const initialPage = Number(searchParams.get('page'));
+  const [page, setPage] = React.useState(Number.isInteger(initialPage) && initialPage > 0 ? initialPage : 1);
   const pageSize = 25;
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -101,10 +105,20 @@ function DashboardInner() {
   if (asn) params.set('asn', String(asn));
   if (software) params.set('software', software);
 
+  // Mirror filters into the URL so pagination/filters survive refresh and
+  // back-navigation, and filtered views are shareable/bookmarkable.
+  React.useEffect(() => {
+    const qs = params.toString();
+    if (`?${qs}` !== window.location.search) {
+      router.replace(`/?${qs}`, { scroll: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, port, device, asn, software, page, router]);
+
   const stats = useQuery({
     queryKey: ['stats'],
     queryFn: () => api<Stats>('/api/stats'),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const findings = useQuery({
@@ -135,6 +149,10 @@ function DashboardInner() {
   const rows = findings.data?.rows ?? [];
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(start + pageSize - 1, total);
+  // placeholderData keeps the previous page on screen while the next one
+  // loads; surface that so stale rows aren't mistaken for live results.
+  const showFetching = findings.isFetching || findings.isPlaceholderData;
+  const refreshFailing = stats.isError || findings.isError;
 
   React.useEffect(() => {
     const lastPage = Math.max(1, Math.ceil(total / pageSize));
@@ -423,32 +441,51 @@ function DashboardInner() {
                 <Download size={13} /> All CSV
               </a>
               <Activity size={13} />
-              Auto-refresh on
+              {refreshFailing ? (
+                <span className="inline-flex items-center gap-1 text-amber" title="The last refresh failed — retrying in the background">
+                  <TriangleAlert size={13} /> Refresh failing
+                </span>
+              ) : showFetching ? (
+                <span className="text-[var(--text-dim)]">Refreshing…</span>
+              ) : (
+                'Auto-refresh on'
+              )}
             </span>
           </div>
 
-          <div className="results-list">
-            {rows.map((f, i) => (
-              <HostCard key={f.id} f={f} idx={(page - 1) * pageSize + i} />
-            ))}
-            {!rows.length && (
-              <div className="empty-state">
-                <Search size={40} />
-                <h3>No results found</h3>
-                <p>Try adjusting your search query or port filter.</p>
-              </div>
+          <div className={`results-list${showFetching ? ' results-refreshing' : ''}`}>
+            {findings.isLoading ? (
+              <>
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="skeleton-card" aria-hidden="true" />
+                ))}
+                <span className="sr-only">Loading results…</span>
+              </>
+            ) : (
+              <>
+                {rows.map((f, i) => (
+                  <HostCard key={f.id} f={f} idx={(page - 1) * pageSize + i} />
+                ))}
+                {!rows.length && (
+                  <div className="empty-state">
+                    <Search size={40} />
+                    <h3>No results found</h3>
+                    <p>Try adjusting your search query or port filter.</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {total > pageSize && (
             <div className="pagination">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <button disabled={page <= 1 || showFetching} onClick={() => setPage((p) => p - 1)}>
                 <ChevronLeft size={16} /> Previous
               </button>
               <span className="page-num">
                 Page {page} of {Math.max(1, Math.ceil(total / pageSize)).toLocaleString()}
               </span>
-              <button disabled={end >= total} onClick={() => setPage((p) => p + 1)}>
+              <button disabled={end >= total || showFetching} onClick={() => setPage((p) => p + 1)}>
                 Next <ChevronRight size={16} />
               </button>
             </div>
@@ -459,15 +496,20 @@ function DashboardInner() {
   );
 }
 
-const queryClient = makeQueryClient();
-
 export default function Dashboard() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <>
       {/* useSearchParams (device deep-link) needs a Suspense boundary. */}
-      <React.Suspense fallback={null}>
+      <React.Suspense fallback={
+        <div className="app" aria-busy="true">
+          <div className="loading-screen">
+            <span className="spinner" />
+            <p>Loading dashboard…</p>
+          </div>
+        </div>
+      }>
         <DashboardInner />
       </React.Suspense>
-    </QueryClientProvider>
+    </>
   );
 }

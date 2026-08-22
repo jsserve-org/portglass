@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, QueryClientProvider } from "@tanstack/react-query";
-import { makeQueryClient } from "@/lib/query";
+import { memo, useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useScanWs } from "@/lib/use-scan-ws";
+import { toast } from "./toast";
 import ShareButton from "./share-button";
 
-const queryClient = makeQueryClient();
 import {
   ArrowLeft,
   Globe,
@@ -20,6 +19,7 @@ import {
   Clock,
   TerminalSquare,
   Database,
+  RefreshCw,
   } from "lucide-react";
 import TopNav from "./top-nav";
 import Link from "next/link";
@@ -96,8 +96,74 @@ function isHttpPort(port: number) {
   return HTTP_PORTS.has(port);
 }
 
+// memo: a live scan re-renders the whole page every 2s tick; rows come from
+// React Query's structural sharing, so unchanged findings keep their object
+// identity and skip the (banner + headers + links) row rebuild.
+const FindingRow = memo(function FindingRow({
+  f,
+  expanded,
+  onToggle,
+}: {
+  f: Finding;
+  expanded: boolean;
+  onToggle: (id: number) => void;
+}) {
+  return (
+    <tr>
+      <td>
+        <Link href={`/host/${encodeURIComponent(f.ip)}`} className="ip-link">
+          <Globe size={12} />
+          {f.ip}
+        </Link>
+      </td>
+      <td>
+        <span className="port-badge">{f.port}</span>
+      </td>
+      <td>{f.latencyMs ? `${f.latencyMs.toFixed(1)}ms` : "—"}</td>
+      <td className="cell-ellipsis" title={f.banner || ""}>
+        {f.banner || "—"}
+      </td>
+      <td>
+        {f.headers ? (
+          <button
+            className="header-toggle"
+            aria-expanded={expanded}
+            onClick={() => onToggle(f.id)}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            View
+          </button>
+        ) : (
+          "—"
+        )}
+        {expanded && f.headers && (
+          <pre className="headers-block">{f.headers}</pre>
+        )}
+      </td>
+      <td>
+        {isHttpPort(f.port) && (
+          <a
+            href={`http${f.port === 443 || f.port === 8443 ? "s" : ""}://${f.ip}:${f.port}`}
+            target="_blank"
+            rel="noreferrer"
+            className="open-link"
+            aria-label={`Open http://${f.ip}:${f.port}`}
+            title={`Open http://${f.ip}:${f.port}`}
+          >
+            <ExternalLink size={14} />
+          </a>
+        )}
+      </td>
+    </tr>
+  );
+});
+
 function ScanDetailInner({ runId }: { runId: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
+  // Stable callback so memoized FindingRows don't re-render on parent updates.
+  const toggleHeader = useCallback((id: number) => {
+    setExpandedHeader((prev) => (prev === id ? null : id));
+  }, []);
   const [killing, setKilling] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState(false);
@@ -183,6 +249,28 @@ function ScanDetailInner({ runId }: { runId: string }) {
   }
 
   if (!run) {
+    // Distinguish "the API says this scan doesn't exist" from "the request
+    // failed" — a network blip used to render a confident "Scan not found".
+    if (scan.isError) {
+      return (
+        <div className="app">
+          <div className="error-screen">
+            <h2>Couldn&apos;t load this scan</h2>
+            <p style={{ color: 'var(--text-muted)', margin: '8px 0 16px' }}>
+              {(scan.error as Error)?.message || 'Something went wrong.'}
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="auth-btn" onClick={() => scan.refetch()}>
+                <RefreshCw size={14} /> Retry
+              </button>
+              <Link href="/scans" className="auth-btn" style={{ background: 'transparent', color: 'inherit' }}>
+                <ArrowLeft size={14} /> All scans
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="app">
         <div className="error-screen">
@@ -210,8 +298,11 @@ function ScanDetailInner({ runId }: { runId: string }) {
       if (!res.ok) throw new Error(await res.text());
       await scan.refetch();
       setEditingLabel(false);
-    } catch {
-      /* leave the editor open so the user can retry */
+      toast.success("Label saved");
+    } catch (err) {
+      // Keep the editor open so the user can retry — but say why nothing
+      // happened instead of failing silently.
+      toast.error(err instanceof Error && err.message ? `Couldn't save label: ${err.message}` : "Couldn't save label");
     } finally {
       setSavingLabel(false);
     }
@@ -325,7 +416,7 @@ function ScanDetailInner({ runId }: { runId: string }) {
             <div className="progress-track">
               <div
                 className="progress-fill"
-                style={{ width: livePct != null ? `${livePct}%` : "100%" }}
+                style={{ transform: `scaleX(${livePct != null ? livePct / 100 : 1})` }}
               />
             </div>
             <div className="scan-progress-stats">
@@ -448,7 +539,9 @@ function ScanDetailInner({ runId }: { runId: string }) {
         {ai && (
           <div className="scan-ai-summary">
             <h3><Zap size={14} /> AI Summary</h3>
-            <div className="ai-body" dangerouslySetInnerHTML={{ __html: ai.replace(/\n/g, "<br/>") }} />
+            {/* Plain text, not HTML: LLM output is nondeterministic and banners
+                feeding the prompt can contain markup-like payloads. */}
+            <div className="ai-body ai-body-text">{ai}</div>
           </div>
         )}
 
@@ -477,50 +570,22 @@ function ScanDetailInner({ runId }: { runId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {findings.map((f) => (
-                  <tr key={f.id}>
-                    <td>
-                      <Link href={`/host/${encodeURIComponent(f.ip)}`} className="ip-link">
-                        <Globe size={12} />
-                        {f.ip}
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="port-badge">{f.port}</span>
-                    </td>
-                    <td>{f.latencyMs ? `${f.latencyMs.toFixed(1)}ms` : "—"}</td>
-                    <td className="cell-ellipsis" title={f.banner || ""}>
-                      {f.banner || "—"}
-                    </td>
-                    <td>
-                      {f.headers ? (
-                        <button
-                          className="header-toggle"
-                          onClick={() => setExpandedHeader(expandedHeader === f.id ? null : f.id)}
-                        >
-                          {expandedHeader === f.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          View
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                      {expandedHeader === f.id && f.headers && (
-                        <pre className="headers-block">{f.headers}</pre>
-                      )}
-                    </td>
-                    <td>
-                      {isHttpPort(f.port) && (
-                        <a
-                          href={`http${f.port === 443 || f.port === 8443 ? "s" : ""}://${f.ip}:${f.port}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="open-link"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                      )}
+                {findings.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: 18, textAlign: 'center', color: 'var(--text-muted)' }}>
+                      {isActive
+                        ? "No findings yet — open ports appear here as the scanner progresses."
+                        : "No open ports were recorded for this scan."}
                     </td>
                   </tr>
+                )}
+                {findings.map((f) => (
+                  <FindingRow
+                    key={f.id}
+                    f={f}
+                    expanded={expandedHeader === f.id}
+                    onToggle={toggleHeader}
+                  />
                 ))}
               </tbody>
             </table>
@@ -532,9 +597,5 @@ function ScanDetailInner({ runId }: { runId: string }) {
 }
 
 export default function ScanDetail({ runId }: { runId: string }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <ScanDetailInner runId={runId} />
-    </QueryClientProvider>
-  );
+  return <ScanDetailInner runId={runId} />;
 }

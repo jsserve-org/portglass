@@ -3,10 +3,10 @@
 // request handler under a plain http.Server and attach a ws server to the
 // `upgrade` event at /api/ws/scans.
 //
-// Each subscriber gets a small server-side poll of /api/runs (reusing that
-// route's auth + computed status/ETA) pushed over the socket every 2s, so the
-// browser stops polling. If anything WS-related fails the HTTP app is
-// unaffected and clients fall back to normal REST polling.
+// All subscribers share one server-side poll of /api/runs per unique session
+// (reusing that route's auth + computed status/ETA) broadcast over the socket
+// every 2s, so the browser stops polling. If anything WS-related fails the HTTP
+// app is unaffected and clients fall back to normal REST polling.
 const path = require('path');
 const crypto = require('crypto');
 const { createServer } = require('http');
@@ -76,9 +76,9 @@ runMigrations().then(() => app.prepare()).then(() => {
   if (wss) {
     // Heartbeat reaper. Behind nginx/Cloudflare a browser that navigates away
     // often leaves a HALF-OPEN socket: the server never gets 'close', so its
-    // per-connection 2s self-fetch interval runs forever. These zombies pile up
-    // (CPU + memory) until the Node heap OOMs. Ping every 30s and terminate any
-    // socket that didn't pong since the last round.
+    // subscription would be polled forever. These zombies pile up (CPU + memory)
+    // until the Node heap OOMs. Ping every 30s and terminate any socket that
+    // didn't pong since the last round.
     const reaper = setInterval(() => {
       for (const ws of wss.clients) {
         if (ws.isAlive === false) {
@@ -91,51 +91,81 @@ runMigrations().then(() => app.prepare()).then(() => {
     }, 30000);
     wss.on('close', () => clearInterval(reaper));
 
+    // One shared poller instead of one per connection. Previously every socket
+    // ran its own 2s loopback fetch through the whole Next pipeline (middleware
+    // -> auth -> handler), then re-serialized the payload for itself. With N
+    // open tabs that was N identical HTTP round-trips + N auth DB lookups + N
+    // JSON serializations every 2s. Now one tick per unique session cookie
+    // fetches once, serializes once, and broadcasts the same string to every
+    // socket sharing that session. A 401 closes the whole group (expired
+    // session) instead of leaving sockets to retry forever.
+    const groups = new Map(); // cookie -> { sockets:Set, subs:Map<runId, Set>, busy:Set }
+    const groupFor = (cookie) => {
+      let g = groups.get(cookie);
+      if (!g) {
+        g = { sockets: new Set(), subs: new Map(), busy: new Set() };
+        groups.set(cookie, g);
+      }
+      return g;
+    };
+
+    const sendFrame = (ws, str) => {
+      if (ws.readyState !== ws.OPEN) return;
+      // Don't pile up frames for a client that isn't draining (slow/dead).
+      if (ws.bufferedAmount > 1_000_000) return;
+      try { ws.send(str); } catch { /* closing; reaper will reap */ }
+    };
+
+    const pushShared = async (cookie, path, frame, group, cacheKey) => {
+      if (group.busy.has(cacheKey)) return;
+      group.busy.add(cacheKey);
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { cookie } });
+        if (res.status === 401) {
+          for (const ws of group.sockets) {
+            try { ws.close(4401, 'unauthorized'); } catch { /* already closing */ }
+          }
+          return;
+        }
+        if (res.ok) {
+          const str = JSON.stringify({ ...frame, data: await res.json() });
+          const targets = frame.type === 'scan'
+            ? group.subs.get(frame.runId)
+            : group.sockets;
+          if (targets) for (const ws of targets) sendFrame(ws, str);
+        }
+      } catch {
+        /* transient; try again next tick */
+      } finally {
+        group.busy.delete(cacheKey);
+      }
+    };
+
+    const tick = async () => {
+      for (const [cookie, group] of groups) {
+        if (!group.sockets.size) continue;
+        pushShared(cookie, '/api/runs', { type: 'scans' }, group, 'scans').catch(() => {});
+        for (const runId of group.subs.keys()) {
+          pushShared(cookie, `/api/scan/${runId}`, { type: 'scan', runId }, group, `scan:${runId}`).catch(() => {});
+        }
+      }
+    };
+    const ticker = setInterval(tick, 2000);
+    wss.on('close', () => clearInterval(ticker));
+
     wss.on('connection', (ws, req) => {
       const cookie = req.headers.cookie || '';
+      const group = groupFor(cookie);
+      group.sockets.add(ws);
       ws.isAlive = true;
       ws.on('pong', () => { ws.isAlive = true; });
-      let closed = false;
-      let timer = null;
       // Optional per-run detail subscription: the scan-detail page sends
       // {type:'subscribe', runId} and we additionally push that run's full
       // detail (run + findings + progress) each tick so it renders live too.
       let subRunId = null;
 
-      const pushFrom = async (path, frame) => {
-        if (closed) return;
-        // Don't pile up frames for a client that isn't draining (slow/dead).
-        if (ws.bufferedAmount > 1_000_000) return;
-        try {
-          const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { cookie } });
-          if (res.status === 401) {
-            ws.close(4401, 'unauthorized');
-            return;
-          }
-          if (res.ok && !closed && ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ ...frame, data: await res.json() }));
-          }
-        } catch {
-          /* transient; try again next tick */
-        }
-      };
-
-      // Guard against overlap: setInterval fires every 2s regardless of whether
-      // the previous tick's self-fetches finished. Under load that let in-flight
-      // requests pile up unboundedly (memory runaway -> heap OOM). If a tick is
-      // still running, skip this one.
-      let ticking = false;
-      const tick = async () => {
-        if (closed || ticking) return;
-        ticking = true;
-        try {
-          await pushFrom('/api/runs', { type: 'scans' });
-          if (subRunId != null) {
-            await pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
-          }
-        } finally {
-          ticking = false;
-        }
+      const pushNow = (runId) => {
+        pushShared(cookie, `/api/scan/${runId}`, { type: 'scan', runId }, group, `scan:${runId}`).catch(() => {});
       };
 
       ws.on('message', (raw) => {
@@ -147,22 +177,38 @@ runMigrations().then(() => app.prepare()).then(() => {
         }
         if (msg && msg.type === 'subscribe') {
           const id = parseInt(msg.runId, 10);
-          subRunId = Number.isNaN(id) ? null : id;
-          if (subRunId != null) pushFrom(`/api/scan/${subRunId}`, { type: 'scan', runId: subRunId });
+          const next = Number.isNaN(id) ? null : id;
+          if (next === subRunId) return;
+          if (subRunId != null) {
+            const set = group.subs.get(subRunId);
+            if (set) { set.delete(ws); if (!set.size) group.subs.delete(subRunId); }
+          }
+          subRunId = next;
+          if (subRunId != null) {
+            let set = group.subs.get(subRunId);
+            if (!set) { set = new Set(); group.subs.set(subRunId, set); }
+            set.add(ws);
+            pushNow(subRunId); // immediate first frame, then every 2s
+          }
         } else if (msg && msg.type === 'unsubscribe') {
+          if (subRunId != null) {
+            const set = group.subs.get(subRunId);
+            if (set) { set.delete(ws); if (!set.size) group.subs.delete(subRunId); }
+          }
           subRunId = null;
         }
       });
 
       const stop = () => {
-        closed = true;
-        if (timer) clearInterval(timer);
+        group.sockets.delete(ws);
+        if (subRunId != null) {
+          const set = group.subs.get(subRunId);
+          if (set) { set.delete(ws); if (!set.size) group.subs.delete(subRunId); }
+        }
+        if (!group.sockets.size) groups.delete(cookie);
       };
       ws.on('close', stop);
       ws.on('error', stop);
-
-      tick();
-      timer = setInterval(tick, 2000);
     });
   }
 

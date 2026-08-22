@@ -34,5 +34,7 @@ export async function GET() {
     return { software: items };
   });
 
-  return Response.json(payload);
+  return Response.json(payload, {
+    headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+  });
 }

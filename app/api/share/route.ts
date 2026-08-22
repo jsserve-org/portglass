@@ -21,14 +21,30 @@ async function requireUser() {
 }
 
 // GET /api/share -> list the current user's share links (for management).
-// Snapshots are omitted to keep the payload small.
+// Snapshots are omitted to keep the payload small — and never even fetched:
+// each snapshot can embed hundreds of findings, so selecting the whole row and
+// discarding the column shipped megabytes per list view.
 export async function GET() {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const rows = await db.select().from(shares).orderBy(desc(shares.createdAt)).limit(200);
+  const rows = await db
+    .select({
+      token: shares.token,
+      kind: shares.kind,
+      refId: shares.refId,
+      title: shares.title,
+      expiresAt: shares.expiresAt,
+      revoked: shares.revoked,
+      createdBy: shares.createdBy,
+      createdAt: shares.createdAt,
+      passwordHash: shares.passwordHash,
+    })
+    .from(shares)
+    .orderBy(desc(shares.createdAt))
+    .limit(200);
   return NextResponse.json(
-    rows.map(({ snapshot, passwordHash, ...rest }) => ({
+    rows.map(({ passwordHash, ...rest }) => ({
       ...rest,
       hasPassword: !!passwordHash,
     })),
@@ -81,7 +97,7 @@ export async function POST(request: Request) {
     refId,
     title: typeof body.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 200) : null,
     snapshot: JSON.stringify(snapshot),
-    passwordHash: password ? hashPassword(password) : null,
+    passwordHash: password ? await hashPassword(password) : null,
     expiresAt,
     createdBy: (user as any).id ?? null,
   });

@@ -1,7 +1,6 @@
 "use client";
 
-import { useQuery, QueryClientProvider } from "@tanstack/react-query";
-import { makeQueryClient } from "@/lib/query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Globe,
   Radio,
@@ -19,6 +18,7 @@ import {
   Braces,
   Download,
   Database,
+  RefreshCw,
   ShieldCheck,
 } from "lucide-react";
 import TopNav from "./top-nav";
@@ -37,8 +37,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { HostDns } from "@/app/api/host/[ip]/dns/route";
-
-const queryClient = makeQueryClient();
 
 type Finding = {
   id: number;
@@ -160,6 +158,13 @@ function HostDetailInner({ ip }: { ip: string }) {
   const [expandedHeader, setExpandedHeader] = useState<number | null>(null);
   const [showRaw, setShowRaw] = useState(false);
 
+  // Mirror of the server's validation (app/api/host/[ip]/route.ts), including
+  // the IPv6-with-embedded-v4-tail form, so the page never renders a confident
+  // "0 open ports" for a malformed URL.
+  const V4 = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const V6 = /^[0-9a-fA-F:]+(:\d{1,3}(\.\d{1,3}){3})?$/;
+  const invalidIp = !ip || (!V4.test(ip) && !(ip.includes(":") && V6.test(ip)));
+
   const data = useQuery({
     queryKey: ["host", ip],
     queryFn: async () => {
@@ -167,7 +172,15 @@ function HostDetailInner({ ip }: { ip: string }) {
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<{ ip: string; geo?: Geo; findings: Finding[]; mapboxToken?: string }>;
     },
-    refetchInterval: 10000,
+    // Host findings only change when a scan touches the IP; polling the full
+    // enriched payload (banners + headers) every 10s was pure waste.
+    refetchInterval: 60_000,
+    enabled: !invalidIp,
+    retry: (failureCount, error) => {
+      // Don't retry a 4xx (bad IP, unauthorized) — refetching can't fix it.
+      const msg = (error as Error)?.message ?? "";
+      return failureCount < 2 && !/^(400|401|403|404)/.test(msg);
+    },
   });
 
   const dnsq = useQuery({
@@ -284,12 +297,53 @@ function HostDetailInner({ ip }: { ip: string }) {
   const country = geo?.countryName || geo?.countryIso || "Unknown";
   const location = geo?.city ? `${geo.city}, ${country}` : country;
 
+  if (invalidIp) {
+    return (
+      <div className="app">
+        <TopNav />
+        <div className="error-screen">
+          <h2>&ldquo;{ip}&rdquo; is not a valid IP address</h2>
+          <p style={{ color: 'var(--text-muted)', margin: '8px 0 16px' }}>Check the URL and try again.</p>
+          <Link href="/" className="auth-btn">Back to dashboard</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (data.isLoading) {
     return (
       <div className="app">
         <div className="loading-screen">
           <span className="spinner" />
           <p>Loading host details…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.isError) {
+    // A failed fetch used to render a normal-looking page claiming "0 open
+    // ports" — factually wrong output for a security tool. Show the failure.
+    const msg = (data.error as Error)?.message || "";
+    const unauthorized = /401|unauthorized/i.test(msg);
+    return (
+      <div className="app">
+        <TopNav />
+        <div className="error-screen">
+          <h2>{unauthorized ? "Sign in to view this host" : "Couldn't load this host"}</h2>
+          <p style={{ color: 'var(--text-muted)', margin: '8px 0 16px' }}>
+            {unauthorized ? "Your session may have expired." : msg || "Something went wrong."}
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            {!unauthorized && (
+              <button type="button" className="auth-btn" onClick={() => data.refetch()}>
+                <RefreshCw size={14} /> Retry
+              </button>
+            )}
+            <Link href="/" className="auth-btn" style={{ background: 'transparent', color: 'inherit' }}>
+              Back to dashboard
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -629,7 +683,7 @@ function HostDetailInner({ ip }: { ip: string }) {
           </h3>
 
           <div className="findings-table-wrap">
-            <table className="findings-table">
+            <table className="findings-table table-hostdetail">
               <thead>
                 <tr>
                   <th>Port</th>
@@ -643,6 +697,13 @@ function HostDetailInner({ ip }: { ip: string }) {
                 </tr>
               </thead>
               <tbody>
+                {findings.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: 18, textAlign: 'center', color: 'var(--text-muted)' }}>
+                      This host has no recorded open ports. Run a scan that covers it to see results here.
+                    </td>
+                  </tr>
+                )}
                 {findings.map((f) => (
                   <tr key={f.id}>
                     <td>
@@ -739,6 +800,7 @@ function HostDetailInner({ ip }: { ip: string }) {
                           target="_blank"
                           rel="noreferrer"
                           className="open-link"
+                          aria-label={`Open http://${f.ip}:${f.port}`}
                         >
                           <ExternalLink size={14} />
                         </a>
@@ -756,9 +818,5 @@ function HostDetailInner({ ip }: { ip: string }) {
 }
 
 export default function HostDetail({ ip }: { ip: string }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <HostDetailInner ip={ip} />
-    </QueryClientProvider>
-  );
+  return <HostDetailInner ip={ip} />;
 }

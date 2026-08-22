@@ -35,6 +35,16 @@ export const auth = betterAuth({
   baseURL: process.env.BASE_URL || `http://localhost:${process.env.PORT || 51111}`,
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   trustedOrigins: [process.env.BASE_URL || `http://localhost:${process.env.PORT || 51111}`],
+  session: {
+    // Cache the session in a signed cookie for 5 minutes so getSession stops
+    // hitting the session table on every request (every API route + every WS
+    // tick used to cost a DB roundtrip). Sensitive flows still see revocations
+    // within the TTL window.
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60,
+    },
+  },
   plugins: [...authPlugins, nextCookies()],
 });
 

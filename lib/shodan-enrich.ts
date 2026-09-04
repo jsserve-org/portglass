@@ -6,9 +6,10 @@ import { shodanHostCache } from '@/lib/schema';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Automatically compare a bounded set of US hosts from a completed scan with
+// Automatically compare a bounded set of hosts from a completed scan with
 // Shodan's pre-existing minified service summary. This is intentionally not a
 // bulk mirror: default 25 unique hosts/run, sequential requests, 24h cache.
+// Only hosts Portglass itself observed are ever looked up.
 export async function enrichScanWithShodan(runId: number): Promise<number> {
   if (!isShodanConfigured()) return 0;
   const configured = Number.parseInt(process.env.SHODAN_AUTO_ENRICH_LIMIT || '25', 10);
@@ -21,10 +22,6 @@ export async function enrichScanWithShodan(runId: number): Promise<number> {
     SELECT DISTINCT pf.ip
     FROM port_findings pf
     WHERE pf.run_id = ${runId}
-      AND EXISTS (
-        SELECT 1 FROM geo_blocks gb
-        WHERE gb.network >>= pf.ip::inet AND gb.country_iso = 'US'
-      )
     ORDER BY pf.ip
     LIMIT ${limit}
   `);

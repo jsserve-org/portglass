@@ -28,12 +28,18 @@ function fmtDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
 }
 
-function DomainViewInner() {
+// `initialDomain` is set by the /domains/<domain> route so the searched
+// domain lives in the URL path (shareable, back/forward works); the bare
+// /domains page falls back to ?d=… for old links. The text input is just
+// local editing state.
+function DomainViewInner({ initialDomain }: { initialDomain?: string }) {
   const router = useRouter();
   const sp = useSearchParams();
-  // The searched domain lives in the URL (?d=…) so views are shareable and
-  // back/forward works; the text input is just local editing state.
-  const urlDomain = (sp.get("d") || "").toLowerCase();
+  const urlDomain = (
+    initialDomain ||
+    sp.get("d") ||
+    ""
+  ).toLowerCase();
   const [input, setInput] = useState(urlDomain);
   const [filter, setFilter] = useState("");
   // Debounced mirror of `filter`: CT result sets can be thousands of names,

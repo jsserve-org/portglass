@@ -27,33 +27,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ip:
     .limit(1);
   if (!observed.length) return NextResponse.json({ error: 'Host has not been scanned by Portglass' }, { status: 404 });
 
-  // The product requirement is US-only enrichment. Enforce that server-side
-  // as well as in the UI so this route cannot be used to bypass the scope.
-  const geo = await db.execute(sql`
-    SELECT country_iso
-    FROM geo_blocks
-    WHERE network >>= ${ip}::inet
-    ORDER BY masklen(network) DESC
-    LIMIT 1
-  `);
-  const localCountry = (geo.rows[0] as { country_iso?: unknown } | undefined)?.country_iso;
-  if (typeof localCountry !== 'string' || localCountry.toUpperCase() !== 'US') {
-    return NextResponse.json({ available: false, reason: 'not_us' }, {
-      headers: { 'Cache-Control': 'private, max-age=300' },
-    });
-  }
-
   if (!isShodanConfigured()) {
     return NextResponse.json({ error: 'Shodan enrichment is not configured', code: 'not_configured' }, { status: 503 });
   }
 
   try {
     const intel = await getShodanHostIntel(ip);
-    if (intel.countryCode && intel.countryCode.toUpperCase() !== 'US') {
-      return NextResponse.json({ available: false, reason: 'not_us' }, {
-        headers: { 'Cache-Control': 'private, max-age=300' },
-      });
-    }
     return NextResponse.json({
       available: true,
       attribution: { label: 'Data provided by Shodan', url: `${ATTRIBUTION_URL}${encodeURIComponent(ip)}` },
